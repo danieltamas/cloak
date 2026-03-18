@@ -49,12 +49,18 @@ ctrlc = "3.4"
 # Self-update
 self_update = "0.41"
 
+# Vendored OpenSSL for static musl builds (activated via --features vendored-openssl)
+openssl = { version = "0.10", features = ["vendored"], optional = true }
+
 # Error handling
 anyhow = "1"
 thiserror = "2"
 
 # QR code (for future x402 payment — zero cost if unused)
 qrcode = "0.14"
+
+[features]
+vendored-openssl = ["dep:openssl"]
 
 [dev-dependencies]
 tempfile = "3"
