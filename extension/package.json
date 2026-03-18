@@ -1,0 +1,82 @@
+{
+  "name": "cloak",
+  "displayName": "Cloak — Protect .env from AI Agents",
+  "description": "Encrypt .env secrets so AI coding agents see sandbox values while you see the real ones. AES-256-GCM vault, Touch ID auth, zero network calls.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Daniel Tamas",
+    "email": "hello@danieltamas.com",
+    "url": "https://danieltamas.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/danieltamas/cloak"
+  },
+  "homepage": "https://getcloak.dev",
+  "bugs": {
+    "url": "https://github.com/danieltamas/cloak/issues"
+  },
+  "sponsor": {
+    "url": "https://dani.fkey.id"
+  },
+  "publisher": "danieltamas",
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#1a1a2e",
+    "theme": "dark"
+  },
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "keywords": [
+    "env",
+    "dotenv",
+    "secrets",
+    "security",
+    "encryption",
+    "ai",
+    "ai agent",
+    "copilot",
+    "cursor",
+    "claude",
+    "credentials",
+    "sandbox",
+    "vault",
+    "protect",
+    "api key",
+    "keychain",
+    "touch id",
+    "aes-256"
+  ],
+  "activationEvents": [
+    "workspaceContains:.cloak",
+    "workspaceContains:.env"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "cloak.init", "title": "Cloak: Protect Secrets" },
+      { "command": "cloak.peek", "title": "Cloak: Peek at Real Values" },
+      { "command": "cloak.unprotect", "title": "Cloak: Remove Protection" },
+      { "command": "cloak.openCloakTerminal", "title": "Cloak: Open Terminal with Real Env" },
+      { "command": "cloak.recover", "title": "Cloak: Recover from Lost Keychain" }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -watch -p tsconfig.json",
+    "package": "vsce package --no-dependencies",
+    "test": "vitest run",
+    "lint": "eslint src/"
+  },
+  "devDependencies": {
+    "typescript": "^5.4",
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20",
+    "vitest": "^1.6",
+    "@vscode/vsce": "^2.24",
+    "eslint": "^9",
+    "@typescript-eslint/eslint-plugin": "^7"
+  },
+  "dependencies": {}
+}

@@ -1,0 +1,201 @@
+# Cloak
+
+> Protect .env secrets from AI coding agents. Cloak encrypts real credentials, replaces them with sandbox values on disk, and injects real values at runtime. AI agents see fakes. Developers see the real ones.
+
+## What Is Cloak
+
+Cloak is a developer security tool (CLI + VS Code extension) that protects `.env` files from being read by AI coding agents like Claude Code, Cursor, GitHub Copilot, Codex, and Windsurf.
+
+The `.env` file on disk always contains fake but structurally valid credentials (the "sandbox" version). The VS Code/Cursor extension decrypts and displays real credentials in the editor buffer. When the developer saves, the extension encrypts real values to a vault and writes the sandbox version to disk. AI agents read files from disk — they get sandbox values. The developer sees real values in their editor. The app gets real values at runtime via environment variable injection.
+
+## Core Problem
+
+AI coding agents read files from your working directory to understand context. This includes `.env` files with production API keys, database passwords, tokens, and secrets. `.gitignore` only prevents git commits — it does nothing for local file access. Every agent that can `cat .env` sees your real credentials. These secrets end up in API requests to AI providers, in context windows, in logs, and potentially in training data.
+
+## How It Works
+
+1. **Initialize**: Run `cloak init` in your project. Cloak detects secrets, encrypts them to a local vault (AES-256-GCM), and writes structurally valid sandbox values to disk.
+2. **Develop normally**: The VS Code/Cursor extension shows real values in your editor buffer. On save, sandbox goes to disk, real values go to the encrypted vault.
+3. **Run with real values**: Use `cloak run "npm start"` to inject real environment variables into any process without touching files on disk.
+4. **Recover anytime**: A human-readable recovery key (shown once during init) can restore access if the OS keychain is lost.
+
+## Architecture
+
+- **CLI**: Rust single binary. Cross-platform (macOS Intel/Apple Silicon, Linux x86_64, Windows x86_64).
+- **Extension**: TypeScript. VS Code API + Node crypto built-ins only. Zero runtime dependencies.
+- **Contract**: Both implementations use identical vault binary format, recovery file format, keychain naming, sandbox generation, and .env parsing.
+
+### Key Hierarchy
+
+```
+Recovery key (human-memorable, shown once, never stored on disk)
+  → PBKDF2-SHA256 (100,000 iterations) → Recovery-derived key
+  → Encrypts keychain key in .recovery file
+
+Keychain key (256-bit, stored in OS keychain)
+  → Encrypts secrets in .vault file (AES-256-GCM)
+```
+
+### File Locations
+
+- `project/.env` — sandbox values (fake credentials, structurally valid)
+- `project/.cloak` — JSON marker file (committed to git)
+- `~/.config/cloak/vaults/<hash>.vault` — AES-256-GCM encrypted secrets
+- `~/.config/cloak/vaults/<hash>.recovery` — keychain key encrypted with recovery-derived key
+
+### Vault Format (binary)
+
+```
+Offset  Size    Content
+0       3       Magic: "CLK"
+3       1       Version: 0x01
+4       12      IV (random nonce)
+16      16      AES-256-GCM authentication tag
+32      N       Ciphertext
+```
+
+### Recovery File Format (binary)
+
+```
+Offset  Size    Content
+0       3       Magic: "RCK"
+3       1       Version: 0x01
+4       32      PBKDF2 salt
+36      12      IV for AES-256-GCM
+48      16      AES-256-GCM authentication tag
+64      N       Ciphertext (encrypted 32-byte keychain key)
+```
+
+### Recovery Key Format
+
+`CLOAK-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX` — 24 hex characters (96 bits entropy). Parsing is case-insensitive and dash-tolerant.
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `cloak init` | Detect secrets, encrypt to vault, write sandbox to disk, show recovery key |
+| `cloak edit` | Open real values in $EDITOR, re-encrypt on save, secure-delete temp file |
+| `cloak run <cmd>` | Run command with real env vars injected, no file changes |
+| `cloak peek` | Compare sandbox vs real values side-by-side |
+| `cloak set KEY=VALUE` | Add or update a secret |
+| `cloak reveal KEY --duration 30` | Temporarily show real value in .env, auto-revert |
+| `cloak unprotect` | Restore original .env, delete vault |
+| `cloak status` | Show protection state |
+| `cloak recover` | Restore keychain key from recovery key |
+| `cloak update` | Self-update from GitHub releases |
+
+## Secret Detection
+
+Detects secrets by key name patterns (case-insensitive glob matching) and value patterns:
+
+**By key**: `*DATABASE*URL*`, `*STRIPE*KEY*`, `AWS_ACCESS_KEY*`, `AWS_SECRET*`, `*JWT*SECRET*`, `*API*KEY*`, `*PRIVATE*KEY*`, `*PASSWORD*`, `*TOKEN*`, `*SECRET*`, `*_KEY`
+
+**By value**: Database URL schemes with `@`, Stripe live keys (`sk_live_*`, `pk_live_*`), AWS access keys (`AKIA...`), GitHub tokens (`ghp_*`), Slack tokens (`xoxb-*`), JWTs (`eyJ*`), OpenAI-style keys (`sk-` prefix, length >= 40), high Shannon entropy (> 4.5, length > 20)
+
+**Not secrets**: `NODE_ENV`, `PORT`, `HOST`, `DEBUG`, `LOG_LEVEL`, `TZ`, booleans, plain integers, localhost URLs, CI variables, `NEXT_PUBLIC_*`
+
+## Sandbox Value Generation
+
+Deterministic: same (key, value, SecretType, projectHash) produces the same sandbox output. Examples:
+
+| Secret Type | Sandbox Value |
+|-------------|---------------|
+| Postgres URL | `postgres://dev:dev@localhost:5432/devdb` |
+| Stripe live key | `sk_test_cloak_sandbox_000000000000` |
+| Stripe test key | Pass through unchanged |
+| AWS Access Key | `AKIAIOSFODNN7EXAMPLE` |
+| JWT Secret | `cloak-dev-jwt-secret-not-real-000000` |
+| Password | `cloak_sandbox_password` |
+| Generic token | `cloak_sandbox_token_` + deterministic hex |
+
+## Security Model
+
+- **No plaintext secret ever exists on disk outside the vault.** No backup files, no temp files that persist, no recovery dumps.
+- **Every failure mode results in secrets being MORE visible, never LESS available.** If decryption fails on open, sandbox content is shown with a warning. If encryption fails on save, real values are written to disk (temporary leak preferred over data loss).
+- **Zero network calls.** No telemetry, no cloud sync. Only `cloak update` optionally contacts GitHub.
+- **Atomic writes.** Write-to-temp-then-rename prevents corruption on interrupted operations.
+- **Secure deletion.** Temp files overwritten with random data before removal. Linux uses `/dev/shm` (RAM-backed) when available.
+- **OS keychain integration.** macOS Keychain, Linux libsecret (with PBKDF2 file fallback), Windows Credential Manager.
+
+## Supported Platforms
+
+- macOS: Intel x86_64 and Apple Silicon aarch64
+- Linux: Ubuntu 20.04+, Debian 11+, Fedora 38+, x86_64
+- Windows: 10/11, x86_64
+
+## Supported Editors
+
+- VS Code (primary)
+- Cursor (same VS Code extension)
+- Any VS Code fork (Windsurf, etc.)
+- Terminal-only (CLI commands)
+- JetBrains IDEs (planned v0.3+)
+- Neovim (planned v0.3+)
+
+## Installation
+
+```bash
+# One-line install (macOS/Linux)
+curl -fsSL https://getcloak.dev/install.sh | sh
+
+# VS Code / Cursor extension
+# Install "Cloak" from the VS Code marketplace
+
+# Build from source
+cd cli && cargo build --release
+```
+
+## Agent Skill File (SKILL.md)
+
+Cloak provides a `SKILL.md` file that instructs AI coding agents to actively protect secrets. Drop it into any project root or append its rules to `CLAUDE.md`, `.cursorrules`, or `.windsurfrules`.
+
+**What the skill instructs agents to do:**
+
+1. Never read, display, or reference real secret values from .env files
+2. Check for `.cloak` marker on first interaction — if present, Cloak is active
+3. If `.cloak` is missing and `.env` exists, suggest `cloak init` (always ask for consent first)
+4. Use `cloak run "command"` to execute processes that need real environment variables
+5. Use `cloak set KEY=VALUE` to add or update secrets — never write to .env directly
+6. Never access `~/.config/cloak/vaults/*.vault` or `*.recovery` files
+7. Treat sandbox values as canonical for development (they are structurally valid)
+8. If keychain errors occur, suggest `cloak recover`
+
+**Download:** https://getcloak.dev/SKILL.md
+
+**Quick install:**
+```bash
+curl -fsSL https://getcloak.dev/SKILL.md > SKILL.md
+```
+
+**For CLAUDE.md, append:**
+```
+This project uses Cloak to protect .env secrets. Do not read or reference .env values directly.
+Use `cloak run` to execute commands that need real environment variables.
+Use `cloak set` to add or update secrets. Never write secrets to .env files directly.
+If Cloak is not initialized and .env files exist, ask before running `cloak init`.
+```
+
+## What Cloak Is NOT
+
+- NOT a cloud service. Zero network calls.
+- NOT AI-powered. All detection is regex/heuristic. Secrets never touch an LLM.
+- NOT a team secret manager (that's Infisical/Vault). This is workstation-level protection.
+
+## Version Roadmap
+
+- v0.1.0 — Core: CLI + extension, .env protection only
+- v0.2.0 — Audit logging, git pre-commit hook
+- v0.3.0 — Non-.env file protection (~/.ssh, ~/.aws)
+- v0.4.0 — Web dashboard
+- v0.5.0 — License system for pro features
+- v1.0.0 — Stable release
+
+## Links
+
+- Website: https://getcloak.dev
+- GitHub: https://github.com/danieltamas/cloak
+- VS Code Marketplace: https://marketplace.visualstudio.com/items?itemName=danieltamas.cloak
+- Agent Skill File: https://getcloak.dev/SKILL.md
+- LLMs Reference: https://getcloak.dev/llms.txt
+- License: MIT

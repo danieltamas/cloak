@@ -1,0 +1,31 @@
+.agents
+.claude
+SPECS.md
+
+# Rust
+cli/target/
+**/*.rs.bk
+
+# Node / Extension
+extension/node_modules/
+extension/dist/
+extension/*.vsix
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment (never commit real secrets)
+.env
+.env.local
+.env.production
+
+# Test fixtures (contain fake-but-flaggable secret patterns)
+testdata/
+cli/tests/testdata/

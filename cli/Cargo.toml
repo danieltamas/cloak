@@ -1,0 +1,69 @@
+[package]
+name = "cloak"
+version = "0.1.0"
+edition = "2021"
+authors = ["Daniel Tamas <hello@danieltamas.com>"]
+description = "Protect .env secrets from AI coding agents"
+license = "MIT"
+repository = "https://github.com/danieltamas/cloak"
+readme = "README.md"
+keywords = ["env", "secrets", "security", "dotenv", "ai"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "cloak"
+path = "src/main.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4", features = ["derive", "color"] }
+colored = "2"
+
+# Encryption
+aes-gcm = "0.10"
+rand = "0.8"
+sha2 = "0.10"
+hex = "0.4"
+# PBKDF2 for recovery key derivation
+pbkdf2 = { version = "0.12", features = ["simple"] }
+hmac = "0.12"
+
+# Keychain
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+rpassword = "7"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Platform paths (avoids Windows UNC path issues)
+dirs = "5"
+dunce = "1"
+
+# Editor launching
+which = "7"
+
+# Signal handling
+ctrlc = "3.4"
+
+# Self-update
+self_update = "0.41"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# QR code (for future x402 payment — zero cost if unused)
+qrcode = "0.14"
+
+[dev-dependencies]
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
