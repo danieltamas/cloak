@@ -29,7 +29,7 @@ pbkdf2 = { version = "0.12", features = ["simple"] }
 hmac = "0.12"
 
 # Keychain
-keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
 rpassword = "7"
 
 # Serialization
@@ -60,6 +60,8 @@ thiserror = "2"
 qrcode = "0.14"
 
 [features]
+default = ["linux-keyring"]
+linux-keyring = ["keyring/sync-secret-service"]
 vendored-openssl = ["dep:openssl"]
 
 [dev-dependencies]
