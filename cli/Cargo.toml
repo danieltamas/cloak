@@ -46,11 +46,8 @@ which = "7"
 # Signal handling
 ctrlc = "3.4"
 
-# Self-update
-self_update = "0.41"
-
-# Vendored OpenSSL for static musl builds (activated via --features vendored-openssl)
-openssl = { version = "0.10", features = ["vendored"], optional = true }
+# Self-update (rustls avoids openssl dependency for cross-compilation)
+self_update = { version = "0.41", default-features = false, features = ["rustls"] }
 
 # Error handling
 anyhow = "1"
@@ -62,7 +59,6 @@ qrcode = "0.14"
 [features]
 default = ["linux-keyring"]
 linux-keyring = ["keyring/sync-secret-service"]
-vendored-openssl = ["dep:openssl"]
 
 [dev-dependencies]
 tempfile = "3"
