@@ -103,7 +103,6 @@ async function cmdInit(helpers: CommandHelpers): Promise<void> {
         `Cloak: Save your recovery key — it cannot be recovered if lost!\n\n${recoveryDisplay}`,
         { modal: true },
         'I have saved my recovery key',
-        'Cancel',
     );
 
     if (confirmed !== 'I have saved my recovery key') return;
@@ -211,7 +210,6 @@ async function cmdUnprotect(helpers: CommandHelpers): Promise<void> {
         `Cloak: Remove protection from ${relPath}? Real values will be written to disk.`,
         { modal: true },
         'Remove Protection',
-        'Cancel',
     );
     if (confirmed !== 'Remove Protection') return;
 
@@ -249,7 +247,6 @@ async function cmdOpenCloakTerminal(): Promise<void> {
         'Cloak: This will open a terminal with real secret values in the environment. Continue?',
         { modal: true },
         'Open Terminal',
-        'Cancel',
     );
     if (confirmed !== 'Open Terminal') return;
 
