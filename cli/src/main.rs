@@ -168,6 +168,8 @@ enum Commands {
         #[arg(long, default_value = "30")]
         duration: u64,
     },
+    /// Export decrypted env vars as JSON (for tool integration)
+    Export,
     /// Remove Cloak protection
     Unprotect,
     /// Show protection status
@@ -196,6 +198,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Peek => commands::peek::run(),
         Commands::Set { key, value } => commands::set::run(key, value),
         Commands::Reveal { key, duration } => commands::reveal::run(key, duration),
+        Commands::Export => commands::export::run(),
         Commands::Unprotect => commands::unprotect::run(),
         Commands::Status => commands::status::run(),
         Commands::Update => commands::update::run(),

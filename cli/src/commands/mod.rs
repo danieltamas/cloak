@@ -25,5 +25,8 @@ pub mod unprotect;
 /// `cloak status` — show the current protection status of the project.
 pub mod status;
 
+/// `cloak export` — output decrypted env vars as JSON for tool integration.
+pub mod export;
+
 /// `cloak update` — self-update to the latest GitHub release.
 pub mod update;
