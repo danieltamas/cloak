@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://getcloak.dev/sitemap.xml

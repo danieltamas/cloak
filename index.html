@@ -32,6 +32,9 @@
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="assets/cloak.logo.svg">
 
+    <!-- llms.txt discovery -->
+    <link rel="alternate" type="text/plain" href="/llms.txt">
+
     <!-- Schema.org JSON-LD -->
     <script type="application/ld+json">
     {
@@ -54,6 +57,29 @@
         "license": "https://opensource.org/licenses/MIT",
         "softwareVersion": "0.1.0",
         "programmingLanguage": ["Rust", "TypeScript"]
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "Cloak",
+        "url": "https://getcloak.dev",
+        "logo": "https://getcloak.dev/assets/cloak.logo.svg",
+        "description": "Protect .env secrets from AI coding agents.",
+        "founder": {
+            "@type": "Person",
+            "name": "Daniel Tamas"
+        }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Cloak",
+        "url": "https://getcloak.dev",
+        "description": "Protect .env secrets from AI coding agents. Encrypts real credentials, shows sandbox values to AI agents, real values to developers."
     }
     </script>
 
