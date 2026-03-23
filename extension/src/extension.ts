@@ -116,6 +116,7 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.workspace.onDidOpenTextDocument(onDidOpenTextDocument),
         vscode.workspace.onWillSaveTextDocument(onWillSaveTextDocument),
         vscode.workspace.onDidSaveTextDocument(onDidSaveTextDocument),
+        vscode.workspace.onDidChangeTextDocument(onDidChangeTextDocument),
     );
 
     // 7. Register commands via commands module
@@ -244,6 +245,37 @@ async function runActivationCheck(context: vscode.ExtensionContext): Promise<voi
 // Document event handlers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Detect when VS Code silently reloads sandbox content from disk into the buffer.
+ * This happens after onDidSaveTextDocument writes sandbox to disk — VS Code sees
+ * the external change and reloads, but onDidOpenTextDocument does NOT fire for
+ * reloads. Without this handler, the buffer would show sandbox values to the user.
+ */
+async function onDidChangeTextDocument(event: vscode.TextDocumentChangeEvent): Promise<void> {
+    const doc = event.document;
+    if (programmaticEdits.has(doc.uri.toString())) return;
+    // Only act on clean documents — a disk reload produces a clean doc.
+    // User typing makes doc dirty, so we skip those (avoids expensive checks on every keystroke).
+    if (doc.isDirty) return;
+
+    const { managed, projectRoot, relPath, marker } = await isCloakManaged(doc);
+    if (!managed || !marker) return;
+
+    const key = await keychain.getKey(marker.projectHash);
+    if (!key) return;
+
+    try {
+        const vaultContent = await filemanager.readReal(projectRoot, relPath, key);
+        const projectHash = vault.projectHash(projectRoot);
+        const expectedSandbox = sandbox.sandboxEnv(vaultContent, projectHash);
+
+        if (doc.getText() === expectedSandbox) {
+            // VS Code reloaded sandbox from disk — restore real content in buffer.
+            await replaceDocumentContent(doc, vaultContent);
+        }
+    } catch { /* vault unreadable — leave buffer as-is */ }
+}
+
 async function onDidOpenTextDocument(doc: vscode.TextDocument): Promise<void> {
     if (programmaticEdits.has(doc.uri.toString())) return;
 
@@ -304,18 +336,16 @@ async function handleWillSave(doc: vscode.TextDocument): Promise<vscode.TextEdit
     // This happens when onDidSaveTextDocument writes sandbox to disk and VS Code
     // auto-reloads (onDidOpenTextDocument does NOT fire for reloads).
     // If we encrypted sandbox content to the vault, real secrets would be lost.
+    // We must NOT return TextEdits here — that causes a permanent dirty state.
     try {
         const vaultContent = await filemanager.readReal(projectRoot, relPath, key);
         const projectHash = vault.projectHash(projectRoot);
         const expectedSandbox = sandbox.sandboxEnv(vaultContent, projectHash);
 
         if (bufferContent === expectedSandbox) {
-            // Buffer has sandbox content — restore real content, don't update vault.
-            const fullRange = new vscode.Range(
-                doc.positionAt(0),
-                doc.positionAt(doc.getText().length),
-            );
-            return [vscode.TextEdit.replace(fullRange, vaultContent)];
+            // Buffer has sandbox content — skip vault encryption to protect real secrets.
+            // onDidChangeTextDocument will restore real content in the buffer.
+            return [];
         }
     } catch {
         // Vault unreadable (first protect, corruption) — fall through to normal encrypt.
