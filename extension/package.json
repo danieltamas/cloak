@@ -2,7 +2,7 @@
   "name": "cloak",
   "displayName": "Cloak — Protect .env from AI Agents",
   "description": "Encrypt .env secrets so AI coding agents see sandbox values while you see the real ones. AES-256-GCM vault, Touch ID auth, zero network calls.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "author": {
     "name": "Daniel Tamas",
     "email": "hello@danieltamas.com",
