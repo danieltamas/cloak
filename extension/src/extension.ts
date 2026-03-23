@@ -298,11 +298,32 @@ async function handleWillSave(doc: vscode.TextDocument): Promise<vscode.TextEdit
         return [];
     }
 
-    const realContent = doc.getText();
+    const bufferContent = doc.getText();
+
+    // Guard: detect if VS Code silently reloaded sandbox content into the buffer.
+    // This happens when onDidSaveTextDocument writes sandbox to disk and VS Code
+    // auto-reloads (onDidOpenTextDocument does NOT fire for reloads).
+    // If we encrypted sandbox content to the vault, real secrets would be lost.
+    try {
+        const vaultContent = await filemanager.readReal(projectRoot, relPath, key);
+        const projectHash = vault.projectHash(projectRoot);
+        const expectedSandbox = sandbox.sandboxEnv(vaultContent, projectHash);
+
+        if (bufferContent === expectedSandbox) {
+            // Buffer has sandbox content — restore real content, don't update vault.
+            const fullRange = new vscode.Range(
+                doc.positionAt(0),
+                doc.positionAt(doc.getText().length),
+            );
+            return [vscode.TextEdit.replace(fullRange, vaultContent)];
+        }
+    } catch {
+        // Vault unreadable (first protect, corruption) — fall through to normal encrypt.
+    }
 
     try {
         // Encrypt to vault (before disk write, so vault is always up to date)
-        const vaultBytes = vault.encrypt(realContent, key);
+        const vaultBytes = vault.encrypt(bufferContent, key);
         const vPath = await filemanager.vaultFilePath(projectRoot);
         await fs.writeFile(vPath + '.tmp', vaultBytes);
         await fs.rename(vPath + '.tmp', vPath);
