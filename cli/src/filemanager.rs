@@ -282,6 +282,22 @@ pub fn save_real(project_root: &Path, rel_path: &str, content: &str, key: &[u8; 
 ///
 /// # Errors
 ///
+/// Walk up from `start` to find the nearest directory containing a `.cloak` marker.
+///
+/// Returns the directory containing `.cloak`, or `None` if no marker is found
+/// (stops at the filesystem root).
+pub fn find_project_root(start: &Path) -> Option<PathBuf> {
+    let mut dir = start.to_path_buf();
+    loop {
+        if dir.join(".cloak").exists() {
+            return Some(dir);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
 /// Returns an error if the file exists but cannot be parsed as valid JSON.
 pub fn read_marker(project_root: &Path) -> Result<Option<CloakMarker>> {
     let marker_path = marker_path(project_root);

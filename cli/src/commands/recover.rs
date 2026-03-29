@@ -21,7 +21,9 @@ use colored::Colorize;
 /// Returns an error if the `.cloak` marker is missing, the recovery file does not exist,
 /// the recovery key is invalid, decryption fails, or keychain storage fails.
 pub fn run() -> Result<()> {
-    let project_root = std::env::current_dir().context("Failed to determine current directory")?;
+    let cwd = std::env::current_dir().context("Failed to determine current directory")?;
+    let project_root = filemanager::find_project_root(&cwd)
+        .ok_or_else(|| anyhow!("No .cloak marker found. Is this a Cloak-protected project?"))?;
 
     // Step 1: Read .cloak marker.
     let marker = filemanager::read_marker(&project_root)?.ok_or_else(|| {

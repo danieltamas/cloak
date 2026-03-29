@@ -29,7 +29,9 @@ use anyhow::{Context, Result};
 /// Returns an error if the `.cloak` marker is missing, the keychain key cannot be
 /// retrieved, decryption fails, or the child process cannot be spawned.
 pub fn run(command: Vec<String>) -> Result<()> {
-    let project_root = std::env::current_dir().context("Failed to determine current directory")?;
+    let cwd = std::env::current_dir().context("Failed to determine current directory")?;
+    let project_root = filemanager::find_project_root(&cwd)
+        .ok_or_else(|| anyhow::anyhow!("Not a Cloak project. Run `cloak init` first."))?;
     crate::auth::require_auth(&project_root)?;
 
     // 1. Read marker — must exist.

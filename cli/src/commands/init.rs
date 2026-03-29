@@ -11,7 +11,7 @@
 //! 8. Protects each file via [`filemanager::protect_file`].
 //! 9. Appends Cloak instructions to `CLAUDE.md` if that file exists.
 
-use crate::{detector, envparser, filemanager, keychain, recovery};
+use crate::{detector, envparser, filemanager, keychain, recovery, vault};
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::io::{self, BufRead, Write};
@@ -46,11 +46,53 @@ This project uses Cloak to protect secrets. The .env file contains sandbox (fake
 pub fn run() -> Result<()> {
     let project_root = std::env::current_dir().context("Failed to determine current directory")?;
 
-    // Step 1: Check idempotency — if .cloak marker already exists, bail out cleanly.
+    // Step 1: Check idempotency — if .cloak marker exists, check vault health.
     let marker_path = project_root.join(".cloak");
     if marker_path.exists() {
-        println!("{}", "Already protected".green());
-        return Ok(());
+        // Check if the vault is actually functional (keychain key + recovery file).
+        let project_hash = vault::project_hash(&project_root)
+            .unwrap_or_default();
+        let keychain_ok = keychain::get_key(&project_hash).is_ok();
+        let recovery_ok = recovery::recovery_path(&project_root)
+            .map(|p| p.exists())
+            .unwrap_or(false);
+
+        if keychain_ok {
+            println!("{}", "Already protected".green());
+            return Ok(());
+        }
+
+        // Vault is broken — offer to re-initialize.
+        if !keychain_ok && !recovery_ok {
+            println!(
+                "{}",
+                "Vault is broken: keychain key missing and no recovery file."
+                    .red()
+                    .bold()
+            );
+        } else if !keychain_ok {
+            println!(
+                "{}",
+                "Vault is broken: keychain key missing. Use `cloak recover` if you have the recovery key, or re-init below."
+                    .yellow()
+                    .bold()
+            );
+        }
+        println!();
+        print!("Re-initialize protection from current .env files? [Y/n]: ");
+        io::stdout().flush().context("Failed to flush stdout")?;
+        let mut line = String::new();
+        io::stdin()
+            .lock()
+            .read_line(&mut line)
+            .context("Failed to read confirmation")?;
+        let trimmed = line.trim();
+        if !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("y") {
+            println!("Aborted.");
+            return Ok(());
+        }
+        // Remove the old marker so we can proceed with a fresh init.
+        std::fs::remove_file(&marker_path).ok();
     }
 
     // Step 2: Scan for env files and count secrets.

@@ -21,7 +21,15 @@ use colored::Colorize;
 ///
 /// Returns an error if the current directory cannot be determined or file I/O fails.
 pub fn run() -> Result<()> {
-    let project_root = std::env::current_dir().context("Failed to determine current directory")?;
+    let cwd = std::env::current_dir().context("Failed to determine current directory")?;
+    let project_root = match filemanager::find_project_root(&cwd) {
+        Some(root) => root,
+        None => {
+            println!("{}", "Not protected.".yellow().bold());
+            println!("  Run {} to protect this project.", "`cloak init`".cyan());
+            return Ok(());
+        }
+    };
 
     // 1. Check for .cloak marker.
     let marker = filemanager::read_marker(&project_root)?;

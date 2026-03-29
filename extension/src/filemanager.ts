@@ -281,6 +281,51 @@ export async function saveReal(
 }
 
 /**
+ * Walk up from `startDir` to find the nearest directory containing a `.cloak` marker.
+ * Stops at `stopAt` (inclusive). Returns null if no marker is found.
+ */
+export async function findProjectRoot(startDir: string, stopAt: string): Promise<string | null> {
+    let dir = startDir;
+    while (dir.startsWith(stopAt)) {
+        const markerPath = path.join(dir, '.cloak');
+        try {
+            await fs.access(markerPath);
+            return dir;
+        } catch { /* not found */ }
+        const parent = path.dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+    }
+    return null;
+}
+
+/**
+ * Recursively find all directories containing `.cloak` markers within `rootDir`.
+ * Returns an array of directory paths.
+ */
+export async function findAllCloakProjects(rootDir: string): Promise<string[]> {
+    const results: string[] = [];
+    async function scan(dir: string, depth: number): Promise<void> {
+        if (depth > 5) return; // limit depth to avoid scanning node_modules etc.
+        const markerPath = path.join(dir, '.cloak');
+        try {
+            await fs.access(markerPath);
+            results.push(dir);
+        } catch { /* no marker here */ }
+        try {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                if (!entry.isDirectory()) continue;
+                if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist' || entry.name === 'build') continue;
+                await scan(path.join(dir, entry.name), depth + 1);
+            }
+        } catch { /* unreadable dir */ }
+    }
+    await scan(rootDir, 0);
+    return results;
+}
+
+/**
  * Read the .cloak marker file from <projectRoot>/.cloak.
  * Returns null if the file does not exist.
  */

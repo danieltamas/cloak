@@ -32,15 +32,21 @@ async function isCloakManaged(doc: vscode.TextDocument): Promise<{ managed: bool
     if (!workspaceFolders) return { managed: false, projectRoot: '', relPath: '', marker: null };
 
     for (const folder of workspaceFolders) {
-        const projectRoot = folder.uri.fsPath;
-        if (!filePath.startsWith(projectRoot)) continue;
+        if (!filePath.startsWith(folder.uri.fsPath)) continue;
 
-        const marker = await filemanager.readMarker(projectRoot);
-        if (!marker) continue;
-
-        const relPath = path.relative(projectRoot, filePath).replace(/\\/g, '/');
-        if (marker.protected.includes(relPath)) {
-            return { managed: true, projectRoot, relPath, marker };
+        // Walk up from the file's directory to find the nearest .cloak marker.
+        let dir = path.dirname(filePath);
+        while (dir.startsWith(folder.uri.fsPath)) {
+            const marker = await filemanager.readMarker(dir);
+            if (marker) {
+                const relPath = path.relative(dir, filePath).replace(/\\/g, '/');
+                if (marker.protected.includes(relPath)) {
+                    return { managed: true, projectRoot: dir, relPath, marker };
+                }
+            }
+            const parent = path.dirname(dir);
+            if (parent === dir) break;
+            dir = parent;
         }
     }
 
@@ -154,37 +160,39 @@ async function refreshStatus(): Promise<void> {
     }
 
     for (const folder of folders) {
-        const projectRoot = folder.uri.fsPath;
-        const marker = await filemanager.readMarker(projectRoot);
+        const folderRoot = folder.uri.fsPath;
 
-        if (marker) {
-            // Count total secrets across all protected files
-            const key = await keychain.getKey(marker.projectHash);
-            let secretCount = 0;
+        // Find all cloak projects (including in subdirectories).
+        const cloakProjects = await filemanager.findAllCloakProjects(folderRoot);
 
-            if (key) {
-                for (const relPath of marker.protected) {
-                    try {
-                        const realContent = await filemanager.readReal(projectRoot, relPath, key);
-                        const lines = envparser.parse(realContent);
-                        secretCount += lines.filter(
-                            line => line.type === 'assignment' && detector.detect(line.key, line.value).isSecret
-                        ).length;
-                    } catch { /* vault unreadable — skip */ }
+        if (cloakProjects.length > 0) {
+            let totalSecrets = 0;
+            for (const projectRoot of cloakProjects) {
+                const marker = await filemanager.readMarker(projectRoot);
+                if (!marker) continue;
+                const key = await keychain.getKey(marker.projectHash);
+                if (key) {
+                    for (const relPath of marker.protected) {
+                        try {
+                            const realContent = await filemanager.readReal(projectRoot, relPath, key);
+                            const lines = envparser.parse(realContent);
+                            totalSecrets += lines.filter(
+                                line => line.type === 'assignment' && detector.detect(line.key, line.value).isSecret
+                            ).length;
+                        } catch { /* vault unreadable — skip */ }
+                    }
+                } else {
+                    totalSecrets += marker.protected.length;
                 }
-            } else {
-                // Key missing — still show as protected but count from marker
-                secretCount = marker.protected.length;
             }
-
-            statusbar.update('protected', secretCount);
+            statusbar.update('protected', totalSecrets);
             return;
         }
 
         // No marker — check for .env files
         const envCandidates = ['.env', '.env.local', '.env.production'];
         for (const candidate of envCandidates) {
-            const envPath = path.join(projectRoot, candidate);
+            const envPath = path.join(folderRoot, candidate);
             try {
                 await fs.access(envPath);
                 statusbar.update('unprotected');
@@ -205,38 +213,41 @@ async function runActivationCheck(context: vscode.ExtensionContext): Promise<voi
     if (!folders) return;
 
     for (const folder of folders) {
-        const projectRoot = folder.uri.fsPath;
-        const marker = await filemanager.readMarker(projectRoot);
+        const folderRoot = folder.uri.fsPath;
+        const cloakProjects = await filemanager.findAllCloakProjects(folderRoot);
 
-        if (marker) {
-            // .cloak marker exists → check vault and keychain
-            try {
-                const vPath = await filemanager.vaultFilePath(projectRoot);
-                await fs.access(vPath);
-            } catch {
-                // Vault missing
-                void vscode.window.showWarningMessage(
-                    'Cloak: Vault file is missing. Your .env may be unprotected.',
-                );
-                continue;
-            }
+        if (cloakProjects.length > 0) {
+            for (const projectRoot of cloakProjects) {
+                const marker = await filemanager.readMarker(projectRoot);
+                if (!marker) continue;
 
-            // Vault exists → check keychain
-            const key = await keychain.getKey(marker.projectHash);
-            if (!key) {
-                const choice = await vscode.window.showWarningMessage(
-                    'Cloak: Keychain key is missing for this project.',
-                    'Recover',
-                    'Dismiss',
-                );
-                if (choice === 'Recover') {
-                    void vscode.commands.executeCommand('cloak.recover');
+                // .cloak marker exists → check vault and keychain
+                try {
+                    const vPath = await filemanager.vaultFilePath(projectRoot);
+                    await fs.access(vPath);
+                } catch {
+                    void vscode.window.showWarningMessage(
+                        `Cloak: Vault file is missing for ${path.relative(folderRoot, projectRoot) || 'project'}. Your .env may be unprotected.`,
+                    );
+                    continue;
+                }
+
+                // Vault exists → check keychain
+                const key = await keychain.getKey(marker.projectHash);
+                if (!key) {
+                    const choice = await vscode.window.showWarningMessage(
+                        `Cloak: Keychain key is missing for ${path.relative(folderRoot, projectRoot) || 'project'}.`,
+                        'Recover',
+                        'Dismiss',
+                    );
+                    if (choice === 'Recover') {
+                        void vscode.commands.executeCommand('cloak.recover');
+                    }
                 }
             }
-            // Normal operation — all good
         } else {
-            // No .cloak marker → scan for .env files and prompt onboarding
-            await onboarding.promptIfNeeded(projectRoot, context.workspaceState);
+            // No .cloak marker anywhere → scan for .env files and prompt onboarding
+            await onboarding.promptIfNeeded(folderRoot, context.workspaceState);
         }
     }
 }

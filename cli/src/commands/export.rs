@@ -13,7 +13,9 @@ use anyhow::{Context, Result};
 
 /// Entry point for the `cloak export` command.
 pub fn run() -> Result<()> {
-    let project_root = std::env::current_dir().context("Failed to determine current directory")?;
+    let cwd = std::env::current_dir().context("Failed to determine current directory")?;
+    let project_root = filemanager::find_project_root(&cwd)
+        .ok_or_else(|| anyhow::anyhow!("Not a Cloak project. Run `cloak init` first."))?;
     crate::auth::require_auth(&project_root)?;
 
     // 1. Read marker — must exist.
