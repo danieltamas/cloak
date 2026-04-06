@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import keytar from 'keytar';
+import { execFile } from 'child_process';
 
 let secretStorage: vscode.SecretStorage;
 
@@ -12,19 +12,19 @@ export async function storeKey(projectHash: string, key: Buffer): Promise<void> 
 }
 
 export async function getKey(projectHash: string): Promise<Buffer | null> {
-    // 1. Try VS Code SecretStorage first.
+    // 1. Try VS Code SecretStorage first (fast, no prompt).
     const hex = await secretStorage.get(`cloak-vault-${projectHash}`);
     if (hex) return Buffer.from(hex, 'hex');
 
-    // 2. Fall back to OS keychain (shared with CLI).
+    // 2. Fall back to cloak CLI (triggers Touch ID on macOS).
     try {
-        const osHex = await keytar.getPassword('cloak', `vault-${projectHash}`);
-        if (osHex) {
-            // Cache it in VS Code SecretStorage for next time.
-            await secretStorage.store(`cloak-vault-${projectHash}`, osHex);
-            return Buffer.from(osHex, 'hex');
+        const cliHex = await readViaCli(projectHash);
+        if (cliHex) {
+            // Cache in VS Code SecretStorage for next time.
+            await secretStorage.store(`cloak-vault-${projectHash}`, cliHex);
+            return Buffer.from(cliHex, 'hex');
         }
-    } catch { /* keytar not available or failed */ }
+    } catch { /* cloak CLI not found or failed */ }
 
     return null;
 }
@@ -33,6 +33,20 @@ export async function deleteKey(projectHash: string): Promise<void> {
     await secretStorage.delete(`cloak-vault-${projectHash}`);
 }
 
-export function hasKey(projectHash: string): Promise<boolean> {
-    return getKey(projectHash).then(k => k !== null);
+/**
+ * Retrieve key via `cloak keychain-get` CLI command.
+ * On macOS this triggers Touch ID / password prompt.
+ */
+function readViaCli(projectHash: string): Promise<string | null> {
+    return new Promise((resolve) => {
+        execFile('cloak', ['keychain-get', projectHash], { timeout: 30000 }, (err, stdout) => {
+            if (err) return resolve(null);
+            const hex = stdout.trim();
+            // Validate: must be exactly 64 hex characters (32 bytes).
+            if (hex.length === 64 && /^[0-9a-f]+$/i.test(hex)) {
+                return resolve(hex);
+            }
+            resolve(null);
+        });
+    });
 }
