@@ -298,6 +298,7 @@ dependencies = [
  "qrcode",
  "rand 0.8.5",
  "rpassword",
+ "security-framework 3.7.0",
  "self_update",
  "serde",
  "serde_json",

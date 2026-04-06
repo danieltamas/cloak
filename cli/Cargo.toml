@@ -71,3 +71,7 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# macOS biometric keychain (Touch ID)
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { version = "3.7", features = ["OSX_10_15"] }
