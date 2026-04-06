@@ -1,4 +1,4 @@
-export const CLOAK_VERSION = '0.1.0';
+export const CLOAK_VERSION = '0.2.9';
 export const VAULT_FORMAT_VERSION = 0x01;
 export const RECOVERY_FORMAT_VERSION = 0x01;
 export const MARKER_FORMAT_VERSION = 1;
