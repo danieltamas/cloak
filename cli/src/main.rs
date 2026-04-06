@@ -178,6 +178,12 @@ enum Commands {
     Update,
     /// Recover from a lost keychain using recovery key
     Recover,
+    /// Retrieve vault key from keychain (internal, used by VS Code extension)
+    #[command(name = "keychain-get", hide = true)]
+    KeychainGet {
+        /// The project hash to look up
+        project_hash: String,
+    },
 }
 
 fn main() {
@@ -202,5 +208,6 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Unprotect => commands::unprotect::run(),
         Commands::Status => commands::status::run(),
         Commands::Update => commands::update::run(),
+        Commands::KeychainGet { project_hash } => commands::keychain_get::run(project_hash),
     }
 }

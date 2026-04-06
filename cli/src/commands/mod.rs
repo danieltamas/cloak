@@ -30,3 +30,6 @@ pub mod export;
 
 /// `cloak update` — self-update to the latest GitHub release.
 pub mod update;
+
+/// `cloak keychain-get` — retrieve a vault key for extension integration.
+pub mod keychain_get;
