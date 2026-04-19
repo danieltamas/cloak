@@ -11,6 +11,9 @@ extension/node_modules/
 extension/dist/
 extension/*.vsix
 
+# Graphify
+graphify*
+
 # OS
 .DS_Store
 Thumbs.db

@@ -2,7 +2,7 @@
 
 AI agents see sandbox credentials. You see the real ones. Your app runs with real credentials.
 
-> **Early Software Notice:** Cloak is in active development (v0.2.9). Start with a non-critical project to verify it works for your setup. Please [report bugs](https://github.com/danieltamas/cloak/issues) — your feedback helps make Cloak rock-solid.
+> **Early Software Notice:** Cloak is in active development (v0.3.0). Start with a non-critical project to verify it works for your setup. Please [report bugs](https://github.com/danieltamas/cloak/issues) — your feedback helps make Cloak rock-solid.
 
 ## The Problem
 

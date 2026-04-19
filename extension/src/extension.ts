@@ -99,6 +99,14 @@ export async function refreshDocuments(): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext): void {
+    try {
+        activateInternal(context);
+    } catch (err) {
+        void vscode.window.showErrorMessage(`Cloak: Activation failed — ${String(err)}`);
+    }
+}
+
+function activateInternal(context: vscode.ExtensionContext): void {
     // 1. Initialize keychain with VS Code's SecretStorage
     keychain.init(context.secrets);
 
