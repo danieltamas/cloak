@@ -1,7 +1,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/rust-2021-orange?style=flat-square&logo=rust" alt="Rust 2021" />
   <img src="https://img.shields.io/badge/typescript-5.4-blue?style=flat-square&logo=typescript" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/version-0.3.0-blue?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.3.1-blue?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/encryption-AES--256--GCM-blueviolet?style=flat-square" alt="AES-256-GCM" />
@@ -16,7 +16,7 @@
 
 ---
 
-> **Early Software Notice:** Cloak is in active development (v0.3.0). It works end-to-end on macOS and has been tested on Linux. Windows support is functional but less tested. Start with a non-critical project to verify it works for your setup before protecting production secrets. Please [report bugs](https://github.com/danieltamas/cloak/issues) — your feedback helps make Cloak rock-solid across all platforms.
+> **Early Software Notice:** Cloak is in active development (v0.3.1). It works end-to-end on macOS and has been tested on Linux. Windows support is functional but less tested. Start with a non-critical project to verify it works for your setup before protecting production secrets. Please [report bugs](https://github.com/danieltamas/cloak/issues) — your feedback helps make Cloak rock-solid across all platforms.
 
 ---
 

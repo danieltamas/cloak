@@ -6,7 +6,7 @@ Cloak encrypts real `.env` credentials into an AES-256-GCM vault and leaves stru
 - **Extension** — TypeScript VS Code extension (`extension/`), zero runtime deps, same code works in Cursor / Windsurf / any VS Code fork
 - **Static site** — `index.html`, `llms.txt`, `SKILL.md`, `install.sh`, `install.ps1` served from `getcloak.dev`
 
-Current version: **0.3.0**. Early software — works end-to-end on macOS, tested on Linux, functional on Windows.
+Current version: **0.3.1**. Early software — works end-to-end on macOS, tested on Linux, functional on Windows.
 
 ---
 
