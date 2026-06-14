@@ -46,7 +46,7 @@ fn test_protect_creates_artifacts() {
     let key = test_key();
     let rb = test_recovery_bytes();
 
-    let result = protect_file(&root, ".env", &key, &rb).expect("protect_file should succeed");
+    let result = protect_file(&root, ".env", &key, Some(&rb)).expect("protect_file should succeed");
 
     assert!(result.secret_count > 0, "should detect secrets");
     assert!(
@@ -90,7 +90,7 @@ fn test_protect_no_secrets() {
     let key = test_key();
     let rb = test_recovery_bytes();
 
-    let result = protect_file(&root, ".env", &key, &rb).expect("protect_file should succeed");
+    let result = protect_file(&root, ".env", &key, Some(&rb)).expect("protect_file should succeed");
 
     assert_eq!(result.secret_count, 0, "should detect 0 secrets");
 
@@ -119,13 +119,13 @@ fn test_protect_idempotent() {
     let key = test_key();
     let rb = test_recovery_bytes();
 
-    let r1 = protect_file(&root, ".env", &key, &rb).expect("first protect");
+    let r1 = protect_file(&root, ".env", &key, Some(&rb)).expect("first protect");
     assert!(
         !r1.already_protected,
         "first time should not be already_protected"
     );
 
-    let r2 = protect_file(&root, ".env", &key, &rb).expect("second protect");
+    let r2 = protect_file(&root, ".env", &key, Some(&rb)).expect("second protect");
     assert!(
         r2.already_protected,
         "second time must be already_protected"
@@ -156,7 +156,7 @@ fn test_read_real_returns_original() {
     let key = test_key();
     let rb = test_recovery_bytes();
 
-    protect_file(&root, ".env", &key, &rb).expect("protect");
+    protect_file(&root, ".env", &key, Some(&rb)).expect("protect");
 
     let real = read_real(&root, ".env", &key).expect("read_real should succeed");
     assert_eq!(real, original, "read_real must return original plaintext");
@@ -173,7 +173,7 @@ fn test_save_real_updates_vault_and_sandbox() {
     let key = test_key();
     let rb = test_recovery_bytes();
 
-    protect_file(&root, ".env", &key, &rb).expect("protect");
+    protect_file(&root, ".env", &key, Some(&rb)).expect("protect");
 
     let new_content = "DATABASE_URL=postgres://newuser:newpass@db:5432/newdb\nPORT=8080\n";
     save_real(&root, ".env", new_content, &key).expect("save_real should succeed");
@@ -205,7 +205,7 @@ fn test_unprotect_restores_original() {
     let key = test_key();
     let rb = test_recovery_bytes();
 
-    protect_file(&root, ".env", &key, &rb).expect("protect");
+    protect_file(&root, ".env", &key, Some(&rb)).expect("protect");
 
     // File on disk should now be sandbox.
     let sandbox = std::fs::read_to_string(root.join(".env")).unwrap();
@@ -248,7 +248,7 @@ fn test_file_permissions_600() {
     let key = test_key();
     let rb = test_recovery_bytes();
 
-    protect_file(&root, ".env", &key, &rb).expect("protect");
+    protect_file(&root, ".env", &key, Some(&rb)).expect("protect");
 
     let v_path = cloak::vault::vault_path(&root, ".env").unwrap();
     let r_path = cloak::recovery::recovery_path(&root).unwrap();
@@ -274,7 +274,7 @@ fn test_corrupted_vault_error() {
     let key = test_key();
     let rb = test_recovery_bytes();
 
-    protect_file(&root, ".env", &key, &rb).expect("protect");
+    protect_file(&root, ".env", &key, Some(&rb)).expect("protect");
 
     // Corrupt the vault file.
     let v_path = cloak::vault::vault_path(&root, ".env").unwrap();
@@ -299,7 +299,7 @@ fn test_missing_vault_with_marker_error() {
     let key = test_key();
     let rb = test_recovery_bytes();
 
-    protect_file(&root, ".env", &key, &rb).expect("protect");
+    protect_file(&root, ".env", &key, Some(&rb)).expect("protect");
 
     // Remove the vault file manually (simulates lost keychain scenario).
     let v_path = cloak::vault::vault_path(&root, ".env").unwrap();
@@ -324,7 +324,7 @@ fn test_no_tmp_file_left_behind() {
     let key = test_key();
     let rb = test_recovery_bytes();
 
-    protect_file(&root, ".env", &key, &rb).expect("protect");
+    protect_file(&root, ".env", &key, Some(&rb)).expect("protect");
 
     // No .tmp files should be lingering in the project root.
     let tmp_files: Vec<_> = std::fs::read_dir(&root)
@@ -400,7 +400,7 @@ fn test_marker_contains_correct_hash_and_protected() {
     let key = test_key();
     let rb = test_recovery_bytes();
 
-    protect_file(&root, ".env", &key, &rb).expect("protect");
+    protect_file(&root, ".env", &key, Some(&rb)).expect("protect");
 
     let marker = read_marker(&root)
         .expect("read_marker should succeed")
@@ -437,7 +437,7 @@ fn test_protect_preserves_comments_and_non_secrets() {
     let key = test_key();
     let rb = test_recovery_bytes();
 
-    protect_file(&root, ".env", &key, &rb).expect("protect");
+    protect_file(&root, ".env", &key, Some(&rb)).expect("protect");
 
     let sandbox = std::fs::read_to_string(root.join(".env")).unwrap();
 
@@ -490,8 +490,8 @@ fn test_multiple_files_get_separate_vaults() {
     )
     .unwrap();
 
-    protect_file(&root, ".env", &key, &rb).expect("protect root");
-    protect_file(&root, "sub/.env", &key, &rb).expect("protect nested");
+    protect_file(&root, ".env", &key, Some(&rb)).expect("protect root");
+    protect_file(&root, "sub/.env", &key, Some(&rb)).expect("protect nested");
 
     // Distinct vault files, both present.
     let v_root = cloak::vault::vault_path(&root, ".env").unwrap();
@@ -532,8 +532,8 @@ fn test_read_all_env_vars_merges_later_overrides() {
     )
     .unwrap();
 
-    protect_file(&root, ".env", &key, &rb).expect("protect .env");
-    protect_file(&root, ".env.local", &key, &rb).expect("protect .env.local");
+    protect_file(&root, ".env", &key, Some(&rb)).expect("protect .env");
+    protect_file(&root, ".env.local", &key, Some(&rb)).expect("protect .env.local");
 
     let protected = vec![".env".to_string(), ".env.local".to_string()];
     let merged = read_all_env_vars(&root, &protected, &key).unwrap();
@@ -548,6 +548,41 @@ fn test_read_all_env_vars_merges_later_overrides() {
     assert!(map.contains_key("API_KEY"), "local-only key preserved");
 
     println!("test_read_all_env_vars_merges_later_overrides OK");
+}
+
+#[test]
+fn test_protect_with_none_keeps_recovery_and_key() {
+    let (_dir, root) = setup_project(env_with_secrets());
+    let key = test_key();
+    let rb = test_recovery_bytes();
+
+    // First file seeds the per-project recovery file.
+    protect_file(&root, ".env", &key, Some(&rb)).expect("protect .env");
+    let r_path = cloak::recovery::recovery_path(&root).unwrap();
+    assert!(r_path.exists(), "recovery file must be written on fresh protect");
+    let recovery_before = std::fs::read(&r_path).unwrap();
+
+    // Add a second file reusing the key, passing None for recovery bytes.
+    std::fs::create_dir_all(root.join("sub")).unwrap();
+    std::fs::write(
+        root.join("sub").join(".env"),
+        "API_KEY=sk-subsubsubsubsubsubsubsubsubsubsub0123\n",
+    )
+    .unwrap();
+    protect_file(&root, "sub/.env", &key, None).expect("protect sub/.env reusing key");
+
+    // Recovery file must be byte-identical (untouched).
+    let recovery_after = std::fs::read(&r_path).unwrap();
+    assert_eq!(
+        recovery_before, recovery_after,
+        "recovery file must be left untouched when recovery bytes are None"
+    );
+
+    // Both files decrypt with the same project key — the original is not orphaned.
+    assert!(read_real(&root, ".env", &key).unwrap().contains("admin:secret@"));
+    assert!(read_real(&root, "sub/.env", &key).unwrap().contains("sk-subsubsub"));
+
+    println!("test_protect_with_none_keeps_recovery_and_key OK");
 }
 
 #[test]

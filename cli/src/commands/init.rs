@@ -66,8 +66,10 @@ pub fn run() -> Result<()> {
             .unwrap_or(false);
 
         if keychain_ok {
-            println!("{}", "Already protected".green());
-            return Ok(());
+            // Already protected — add any newly-discovered files (e.g. nested
+            // `.env`) to this project, reusing the existing key. Files already
+            // under protection, and the recovery file, are left untouched.
+            return add_unprotected_files(&project_root);
         }
 
         // Vault is broken — offer to re-initialize.
@@ -207,13 +209,16 @@ pub fn run() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to compute project hash: {}", e))?;
     keychain::store_key(&project_hash, &key).context("Failed to store key in keychain")?;
 
-    // Step 9: Protect each env file that has secrets.
+    // Step 9: Protect each env file that has secrets. The per-project recovery
+    // file is written once (on the first successful protect).
     let mut protected_count = 0usize;
+    let mut recovery_to_write: Option<&[u8]> = Some(&recovery_bytes);
     for (rel_path, _) in &file_secret_counts {
-        let result = filemanager::protect_file(&project_root, rel_path, &key, &recovery_bytes)
+        let result = filemanager::protect_file(&project_root, rel_path, &key, recovery_to_write)
             .with_context(|| format!("Failed to protect {}", rel_path))?;
         if result.secret_count > 0 {
             protected_count += 1;
+            recovery_to_write = None;
         }
     }
 
@@ -299,8 +304,92 @@ fn scan_dir(project_root: &Path, dir: &Path, depth: usize, results: &mut Vec<(St
         if name.starts_with('.') || IGNORE_DIRS.contains(&name.as_ref()) {
             continue;
         }
-        scan_dir(project_root, &entry.path(), depth + 1, results);
+        let child = entry.path();
+        // Don't descend into an independently-protected sub-project — its own
+        // `.cloak` owns those files.
+        if child.join(".cloak").exists() {
+            continue;
+        }
+        scan_dir(project_root, &child, depth + 1, results);
     }
+}
+
+/// Add `.env` files that contain secrets but are not yet in the marker to an
+/// already-protected project, reusing the existing project key. Existing
+/// protected files and the recovery file are left untouched.
+fn add_unprotected_files(project_root: &Path) -> Result<()> {
+    let marker = filemanager::read_marker(project_root)?
+        .ok_or_else(|| anyhow::anyhow!("No .cloak marker found."))?;
+    let project_hash = vault::project_hash(project_root)
+        .map_err(|e| anyhow::anyhow!("Failed to compute project hash: {}", e))?;
+    let key = keychain::get_key(&project_hash)?;
+
+    let already: std::collections::HashSet<&str> =
+        marker.protected.iter().map(String::as_str).collect();
+    let new_files: Vec<(String, usize)> = scan_env_files(project_root)
+        .into_iter()
+        .filter(|(rel, _)| !already.contains(rel.as_str()))
+        .collect();
+
+    if new_files.is_empty() {
+        println!("{}", "Already protected.".green());
+        return Ok(());
+    }
+
+    println!(
+        "{}",
+        format!(
+            "Found {} new file{} with secrets to protect:",
+            new_files.len(),
+            if new_files.len() == 1 { "" } else { "s" }
+        )
+        .bold()
+    );
+    for (rel, count) in &new_files {
+        println!(
+            "  {} — {} secret{}",
+            rel.cyan(),
+            count,
+            if *count == 1 { "" } else { "s" }
+        );
+    }
+    println!();
+    print!("Protect these too? [Y/n]: ");
+    io::stdout().flush().context("Failed to flush stdout")?;
+    let mut line = String::new();
+    io::stdin()
+        .lock()
+        .read_line(&mut line)
+        .context("Failed to read confirmation")?;
+    let trimmed = line.trim();
+    if !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("y") {
+        println!("Aborted.");
+        return Ok(());
+    }
+
+    // Reuse the existing key; pass `None` so the recovery file is left untouched.
+    let mut count = 0usize;
+    for (rel, _) in &new_files {
+        let result = filemanager::protect_file(project_root, rel, &key, None)
+            .with_context(|| format!("Failed to protect {}", rel))?;
+        if result.secret_count > 0 {
+            count += 1;
+            println!("  {} {}", "✓".green(), rel.cyan());
+        }
+    }
+    println!();
+    println!(
+        "{}",
+        format!(
+            "Protected {} additional file{}. Existing protection untouched.",
+            count,
+            if count == 1 { "" } else { "s" }
+        )
+        .green()
+        .bold()
+    );
+
+    Ok(())
 }
 
 /// Parses a `.env` file content and returns the number of detected secrets.
@@ -401,5 +490,24 @@ mod tests {
 
         let found = scan_env_files(root);
         assert!(found.is_empty(), "file beyond depth cap must be skipped, got {found:?}");
+    }
+
+    #[test]
+    fn scan_skips_subdirs_with_their_own_cloak() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        std::fs::write(root.join(".env"), SECRET_LINE).unwrap();
+        // An independently-protected sub-project: has its own .cloak marker.
+        std::fs::create_dir_all(root.join("service")).unwrap();
+        std::fs::write(root.join("service").join(".cloak"), "{}").unwrap();
+        std::fs::write(root.join("service").join(".env"), SECRET_LINE).unwrap();
+
+        let found: Vec<String> = scan_env_files(root).into_iter().map(|(p, _)| p).collect();
+        assert_eq!(
+            found,
+            vec![".env".to_string()],
+            "must not descend into an independently-protected sub-project, got {found:?}"
+        );
     }
 }

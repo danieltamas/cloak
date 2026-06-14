@@ -61,6 +61,17 @@ describe('findEnvFilesWithSecrets', () => {
         expect(found[0].secretCount).toBeGreaterThanOrEqual(2);
     });
 
+    it('does not descend into independently-protected sub-projects', async () => {
+        await fs.writeFile(path.join(root, '.env'), SECRET_LINE);
+        // A sub-project with its own .cloak marker.
+        await fs.mkdir(path.join(root, 'service'), { recursive: true });
+        await fs.writeFile(path.join(root, 'service', '.cloak'), '{}');
+        await fs.writeFile(path.join(root, 'service', '.env'), SECRET_LINE);
+
+        const found = (await findEnvFilesWithSecrets(root)).map(f => f.relPath);
+        expect(found).toEqual(['.env']);
+    });
+
     it('respects the depth cap', async () => {
         let deep = root;
         for (let i = 0; i < 7; i++) deep = path.join(deep, 'd');

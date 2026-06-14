@@ -137,7 +137,14 @@ export async function findEnvFilesWithSecrets(
             // isDirectory() is false for symlinks, so symlinked dirs are skipped.
             if (!entry.isDirectory()) continue;
             if (entry.name.startsWith('.') || IGNORE_DIRS.has(entry.name)) continue;
-            await scan(path.join(dir, entry.name), depth + 1);
+            const child = path.join(dir, entry.name);
+            // Don't descend into an independently-protected sub-project — its own
+            // .cloak owns those files.
+            try {
+                await fs.access(path.join(child, '.cloak'));
+                continue;
+            } catch { /* no marker here — keep scanning */ }
+            await scan(child, depth + 1);
         }
     }
 

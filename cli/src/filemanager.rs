@@ -64,7 +64,10 @@ pub struct ProtectResult {
 /// * `rel_path` — path to the `.env` file, relative to `project_root`.
 /// * `key` — 32-byte AES-256-GCM encryption key.
 /// * `recovery_key_bytes` — raw bytes of the recovery key used to encrypt the
-///   recovery file (see [`recovery::create_recovery_file`]).
+///   recovery file (see [`recovery::create_recovery_file`]). Pass `None` when
+///   adding a file to an already-protected project: the key is reused and the
+///   existing per-project recovery file is left untouched (rewriting it would
+///   invalidate the recovery key the user already saved).
 ///
 /// # Returns
 ///
@@ -79,7 +82,7 @@ pub fn protect_file(
     project_root: &Path,
     rel_path: &str,
     key: &[u8; 32],
-    recovery_key_bytes: &[u8],
+    recovery_key_bytes: Option<&[u8]>,
 ) -> Result<ProtectResult> {
     let env_path = project_root.join(rel_path);
 
@@ -127,27 +130,27 @@ pub fn protect_file(
     let vault_bytes =
         vault::encrypt(&content, key).map_err(|e| anyhow!("Vault encryption failed: {e}"))?;
 
-    // 8. Create recovery file bytes.
-    let recovery_bytes = recovery::create_recovery_file(key, recovery_key_bytes)
-        .map_err(|e| anyhow!("Failed to create recovery file: {e}"))?;
-
-    // 9. Write vault file atomically.
+    // 8. Write vault file atomically and lock it down.
     atomic_write_bytes(&v_path, &vault_bytes)
         .with_context(|| format!("Failed to write vault to {}", v_path.display()))?;
-
-    // 10. Write recovery file atomically.
-    let r_path =
-        recovery::recovery_path(project_root).context("Failed to compute recovery path")?;
-    atomic_write_bytes(&r_path, &recovery_bytes)
-        .with_context(|| format!("Failed to write recovery file to {}", r_path.display()))?;
-
-    // 11. Set permissions 600 on vault and recovery files (Unix).
     platform::set_private_permissions(&v_path)
         .with_context(|| format!("Failed to set permissions on {}", v_path.display()))?;
-    platform::set_private_permissions(&r_path)
-        .with_context(|| format!("Failed to set permissions on {}", r_path.display()))?;
 
-    // 12. Write sandbox content to the .env file on disk (atomic).
+    // 9. Write the per-project recovery file — only when seeding a fresh key.
+    //    When adding a file to an already-protected project the key is reused and
+    //    `recovery_key_bytes` is `None`, so the existing recovery file is kept as-is.
+    if let Some(rk) = recovery_key_bytes {
+        let recovery_bytes = recovery::create_recovery_file(key, rk)
+            .map_err(|e| anyhow!("Failed to create recovery file: {e}"))?;
+        let r_path =
+            recovery::recovery_path(project_root).context("Failed to compute recovery path")?;
+        atomic_write_bytes(&r_path, &recovery_bytes)
+            .with_context(|| format!("Failed to write recovery file to {}", r_path.display()))?;
+        platform::set_private_permissions(&r_path)
+            .with_context(|| format!("Failed to set permissions on {}", r_path.display()))?;
+    }
+
+    // 10. Write sandbox content to the .env file on disk (atomic).
     atomic_write_str(&env_path, &sandbox_content)
         .with_context(|| format!("Failed to write sandbox to {}", env_path.display()))?;
 
