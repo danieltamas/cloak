@@ -44,102 +44,117 @@ export function register(context: vscode.ExtensionContext, helpers: CommandHelpe
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * cloak.init — Onboarding flow: generate key, recovery key, protect file.
+ * cloak.init — Protect every `.env` file with secrets in the workspace folder,
+ * including nested ones (e.g. `apps/api/.env`). Mirrors the CLI's recursive
+ * `cloak init`: one project key + recovery key, one vault per file.
+ *
+ * When the project is already protected, the existing key is reused and the
+ * recovery file is left untouched — only the newly-discovered files are added.
  */
 async function cmdInit(helpers: CommandHelpers): Promise<void> {
-    const editor = vscode.window.activeTextEditor;
     const folders = vscode.workspace.workspaceFolders;
-
-    if (!folders) {
+    if (!folders || folders.length === 0) {
         void vscode.window.showErrorMessage('Cloak: No workspace folder open.');
         return;
     }
 
-    // Determine the target file
-    let targetUri: vscode.Uri | undefined;
-    if (editor && editor.document.fileName.endsWith('.env')) {
-        targetUri = editor.document.uri;
+    // 1. Resolve the project root to scan (the workspace folder).
+    let projectRoot: string;
+    const editor = vscode.window.activeTextEditor;
+    const activeFolder = editor && vscode.workspace.getWorkspaceFolder(editor.document.uri);
+    if (activeFolder) {
+        projectRoot = activeFolder.uri.fsPath;
+    } else if (folders.length === 1) {
+        projectRoot = folders[0].uri.fsPath;
     } else {
-        // Ask user to pick an .env file
-        const picked = await vscode.window.showOpenDialog({
-            canSelectFiles: true,
-            canSelectFolders: false,
-            canSelectMany: false,
-            filters: { 'Env files': ['env'] },
-            openLabel: 'Protect this file',
+        const picked = await vscode.window.showWorkspaceFolderPick({
+            placeHolder: 'Select the project to protect',
         });
-        targetUri = picked?.[0];
+        if (!picked) return;
+        projectRoot = picked.uri.fsPath;
     }
 
-    if (!targetUri) {
-        void vscode.window.showInformationMessage('Cloak: No file selected.');
+    // 2. Recursively scan for .env files containing secrets.
+    const found = await filemanager.findEnvFilesWithSecrets(projectRoot);
+    if (found.length === 0) {
+        void vscode.window.showInformationMessage('Cloak: No unprotected secrets found in this project.');
         return;
     }
 
-    const projectRoot = helpers.getWorkspaceRoot(targetUri.fsPath);
-    if (!projectRoot) {
-        void vscode.window.showErrorMessage('Cloak: File is not in any workspace folder.');
-        return;
-    }
-
-    const relPath = path.relative(projectRoot, targetUri.fsPath).replace(/\\/g, '/');
-
-    // Check if already protected
+    // 3. Skip files already in the marker.
     const existingMarker = await filemanager.readMarker(projectRoot);
-    if (existingMarker?.protected.includes(relPath)) {
-        void vscode.window.showInformationMessage(`Cloak: ${relPath} is already protected.`);
+    const alreadyProtected = new Set(existingMarker?.protected ?? []);
+    const toProtect = found.filter(f => !alreadyProtected.has(f.relPath));
+    if (toProtect.length === 0) {
+        void vscode.window.showInformationMessage('Cloak: All .env files with secrets are already protected.');
         return;
     }
 
-    // Generate encryption key
-    const key = crypto.randomBytes(32);
-    const projectHash = vault.projectHash(projectRoot);
-
-    // Generate recovery key
-    const { display: recoveryDisplay, bytes: recoveryBytes } = recovery.generateRecoveryKey();
-
-    // Show recovery key to user — must be acknowledged
-    const confirmed = await vscode.window.showInformationMessage(
-        `Cloak: Save your recovery key — it cannot be recovered if lost!\n\n${recoveryDisplay}`,
+    // 4. Confirm the file list with the user.
+    const fileList = toProtect
+        .map(f => `• ${f.relPath} — ${f.secretCount} secret${f.secretCount === 1 ? '' : 's'}`)
+        .join('\n');
+    const proceed = await vscode.window.showWarningMessage(
+        `Cloak will protect ${toProtect.length} file${toProtect.length === 1 ? '' : 's'}:\n\n${fileList}`,
         { modal: true },
-        'I have saved my recovery key',
+        'Protect',
     );
+    if (proceed !== 'Protect') return;
 
-    if (confirmed !== 'I have saved my recovery key') return;
+    // 5. Determine the encryption key + whether to seed a recovery file.
+    const projectHash = vault.projectHash(projectRoot);
+    const existingKey = await keychain.getKey(projectHash);
+    let key: Buffer;
+    let recoveryBytes: Buffer | null;
 
-    // Copy recovery key to clipboard after user confirms
-    await vscode.env.clipboard.writeText(recoveryDisplay);
-    vscode.window.showInformationMessage('Recovery key copied to clipboard.');
-
-    try {
-        const result = await filemanager.protectFile(projectRoot, relPath, key, recoveryBytes);
-
-        if (result.secretCount === 0) {
-            void vscode.window.showInformationMessage(
-                `Cloak: No secrets detected in ${relPath}. Nothing to protect.`,
-            );
-            return;
-        }
-
-        // Store key in keychain
+    if (existingMarker && existingKey) {
+        // Already protected — reuse the project key, leave the recovery file alone.
+        key = existingKey;
+        recoveryBytes = null;
+    } else if (existingMarker && !existingKey) {
+        void vscode.window.showErrorMessage(
+            'Cloak: This project is protected but its keychain key is missing. Run "Cloak: Recover" first.',
+        );
+        return;
+    } else {
+        // Fresh protection — generate a key + recovery key and store the key.
+        key = crypto.randomBytes(32);
+        const { display: recoveryDisplay, bytes } = recovery.generateRecoveryKey();
+        const confirmed = await vscode.window.showInformationMessage(
+            `Cloak: Save your recovery key — it cannot be recovered if lost!\n\n${recoveryDisplay}`,
+            { modal: true },
+            'I have saved my recovery key',
+        );
+        if (confirmed !== 'I have saved my recovery key') return;
+        await vscode.env.clipboard.writeText(recoveryDisplay);
+        void vscode.window.showInformationMessage('Recovery key copied to clipboard.');
         await keychain.storeKey(projectHash, key);
-
-        if (result.alreadyProtected) {
-            void vscode.window.showInformationMessage(
-                `Cloak: ${relPath} was already protected. Vault has been updated.`,
-            );
-        } else {
-            void vscode.window.showInformationMessage(
-                `Cloak: Protected ${result.secretCount} secret(s) in ${relPath}.`,
-            );
-        }
-
-        // Refresh open editors and status
-        await helpers.refreshDocuments();
-        await helpers.refreshStatus();
-    } catch (err) {
-        void vscode.window.showErrorMessage(`Cloak: Failed to protect file. ${String(err)}`);
+        recoveryBytes = bytes;
     }
+
+    // 6. Protect each file (each gets its own vault; the recovery file is written
+    //    only on the first call when seeding a fresh key).
+    let protectedCount = 0;
+    let seededRecovery = recoveryBytes;
+    for (const f of toProtect) {
+        try {
+            const result = await filemanager.protectFile(projectRoot, f.relPath, key, seededRecovery);
+            if (result.secretCount > 0) {
+                protectedCount++;
+                seededRecovery = null; // recovery file is per-project — write it once
+            }
+        } catch (err) {
+            void vscode.window.showErrorMessage(`Cloak: Failed to protect ${f.relPath}. ${String(err)}`);
+        }
+    }
+
+    // 7. Refresh open editors and status.
+    await helpers.refreshDocuments();
+    await helpers.refreshStatus();
+
+    void vscode.window.showInformationMessage(
+        `Cloak: Protected ${protectedCount} file${protectedCount === 1 ? '' : 's'}.`,
+    );
 }
 
 /**

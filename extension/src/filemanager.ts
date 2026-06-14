@@ -72,6 +72,81 @@ export async function recoveryFilePath(projectRoot: string): Promise<string> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Recursive .env discovery (mirrors the CLI's `scan_env_files`)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Candidate env file names scanned in each directory. Matches the CLI. */
+const ENV_FILE_NAMES = [
+    '.env',
+    '.env.local',
+    '.env.development',
+    '.env.production',
+    '.env.staging',
+    '.env.test',
+];
+
+/** Directory names skipped during the scan (dot-directories are skipped separately). */
+const IGNORE_DIRS = new Set(['node_modules', 'dist', 'build', 'target', 'vendor', 'coverage']);
+
+/** Maximum directory depth to descend (0 = project root only). */
+const MAX_SCAN_DEPTH = 5;
+
+/**
+ * Recursively scan `rootDir` (subdirectories up to {@link MAX_SCAN_DEPTH}) for
+ * candidate env files that contain at least one detected secret.
+ *
+ * Returns `{ relPath, secretCount }` for each, with forward-slash relative paths
+ * sorted deterministically. `node_modules`, build output, and dot-directories are
+ * skipped, and symlinked directories are not followed — same rules as `cloak init`.
+ */
+export async function findEnvFilesWithSecrets(
+    rootDir: string,
+): Promise<Array<{ relPath: string; secretCount: number }>> {
+    const results: Array<{ relPath: string; secretCount: number }> = [];
+
+    async function scan(dir: string, depth: number): Promise<void> {
+        // Candidate env files in this directory.
+        for (const name of ENV_FILE_NAMES) {
+            const full = path.join(dir, name);
+            let content: string;
+            try {
+                content = await fs.readFile(full, 'utf8');
+            } catch {
+                continue; // not a file / unreadable
+            }
+            const secretCount = envparser.parse(content).filter(
+                line => line.type === 'assignment' && detector.detect(line.key, line.value).isSecret,
+            ).length;
+            if (secretCount > 0) {
+                results.push({
+                    relPath: path.relative(rootDir, full).replace(/\\/g, '/'),
+                    secretCount,
+                });
+            }
+        }
+
+        if (depth >= MAX_SCAN_DEPTH) return;
+
+        let entries: import('fs').Dirent[];
+        try {
+            entries = await fs.readdir(dir, { withFileTypes: true });
+        } catch {
+            return;
+        }
+        for (const entry of entries) {
+            // isDirectory() is false for symlinks, so symlinked dirs are skipped.
+            if (!entry.isDirectory()) continue;
+            if (entry.name.startsWith('.') || IGNORE_DIRS.has(entry.name)) continue;
+            await scan(path.join(dir, entry.name), depth + 1);
+        }
+    }
+
+    await scan(rootDir, 0);
+    results.sort((a, b) => a.relPath.localeCompare(b.relPath));
+    return results;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Atomic write helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -115,7 +190,7 @@ export async function protectFile(
     projectRoot: string,
     relPath: string,
     key: Buffer,
-    recoveryKeyBytes: Buffer,
+    recoveryKeyBytes: Buffer | null,
 ): Promise<ProtectResult> {
     const envPath = path.join(projectRoot, relPath);
 
@@ -155,20 +230,25 @@ export async function protectFile(
     // 7. Encrypt original content.
     const vaultBytes = vault.encrypt(content, key);
 
-    // 8. Create recovery file bytes.
-    const recoveryBytes = recovery.createRecoveryFile(key, recoveryKeyBytes);
-
-    // 9. Write vault file atomically.
+    // 8. Write vault file atomically.
     await atomicWriteBytes(vPath, vaultBytes);
 
-    // 10. Write recovery file atomically.
-    const rPath = await recoveryFilePath(projectRoot);
-    await atomicWriteBytes(rPath, recoveryBytes);
+    // 9. Write the per-project recovery file — only when seeding a fresh key.
+    //    When adding a file to an already-protected project the key is reused and
+    //    recoveryKeyBytes is null, so the existing recovery file is left untouched
+    //    (rewriting it would invalidate the recovery key the user already saved).
+    if (recoveryKeyBytes) {
+        const recoveryBytes = recovery.createRecoveryFile(key, recoveryKeyBytes);
+        const rPath = await recoveryFilePath(projectRoot);
+        await atomicWriteBytes(rPath, recoveryBytes);
+        if (process.platform !== 'win32') {
+            await fs.chmod(rPath, 0o600);
+        }
+    }
 
-    // 11. Set permissions 600 on vault and recovery files (Unix).
+    // 10. Set permissions 600 on the vault file (Unix).
     if (process.platform !== 'win32') {
         await fs.chmod(vPath, 0o600);
-        await fs.chmod(rPath, 0o600);
     }
 
     // 12. Write sandbox content to the .env file on disk (atomic).
