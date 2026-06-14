@@ -199,17 +199,28 @@ No plaintext secrets ever exist on disk outside the vault. No temp files, no bac
 ## CLI Commands
 
 ```bash
-cloak init                        # Detect secrets, encrypt, write sandbox, show recovery key, set password
-cloak edit                        # Open real values in $EDITOR, re-encrypt on save (auth required)
-cloak run <command>               # Run command with real env vars injected (auth required)
-cloak peek                        # Compare sandbox vs real values side-by-side (auth required)
-cloak set KEY VALUE               # Add or update a secret (auth required)
+cloak init                        # Detect secrets in every .env (incl. nested), encrypt, write sandbox, set password
+cloak edit [--file <path>]        # Open real values in $EDITOR, re-encrypt on save (auth required)
+cloak run <command>               # Run command with real env vars from all protected files merged (auth required)
+cloak peek                        # Compare sandbox vs real values, per protected file (auth required)
+cloak set KEY VALUE [--file <p>]  # Add or update a secret (auth required)
 cloak reveal KEY --duration 30    # Temporarily show real value on disk, auto-revert (auth required)
-cloak unprotect                   # Restore original .env, delete vault (auth required)
-cloak status                      # Show protection state (no auth)
+cloak unprotect                   # Restore original .env files, delete vaults (auth required)
+cloak status                      # Show protection state, per file (no auth)
 cloak recover                     # Restore keychain key from recovery key (no auth)
 cloak update                      # Self-update from GitHub releases (no auth)
 ```
+
+### Multiple `.env` files
+
+`cloak init` scans subdirectories (skipping `node_modules`, build output, and dot-dirs)
+and protects every `.env*` that contains a secret — e.g. a monorepo with `.env`,
+`.env.local`, and `apps/api/.env`. Each file gets its own encrypted vault.
+
+`cloak run <cmd>` and `cloak export` decrypt **all** protected files and merge their
+variables; on a conflict the later file wins (dotenv-style: `.env.local` over `.env`,
+deeper directory over root). `cloak edit`/`set`/`reveal` default to the root `.env` —
+use `--file <relpath>` to target another protected file (see `cloak status` for the list).
 
 ## Agent Skill File
 
@@ -311,14 +322,17 @@ Both implement identical encryption, sandbox generation, and env parsing logic i
 ```
 ~/.config/cloak/                          (macOS: ~/Library/Application Support/cloak/)
   vaults/                                 (Windows: %APPDATA%\cloak\)
-    <hash>.vault          AES-256-GCM encrypted secrets
-    <hash>.recovery       Keychain key encrypted with recovery-derived key
-    <hash>.auth           PBKDF2-SHA256 hashed CLI access password
+    <vault-id>.vault      AES-256-GCM encrypted secrets (one per protected file)
+    <hash>.recovery       Keychain key encrypted with recovery-derived key (one per project)
+    <hash>.auth           PBKDF2-SHA256 hashed CLI access password (one per project)
 
 project/
   .env                    Sandbox values (what AI agents read)
+  apps/api/.env           Nested .env files are protected too (own vault each)
   .cloak                  JSON marker: project hash, protected file list
 ```
+
+`<vault-id>` is the project `<hash>` for the root `.env`, or `<hash>-<sha256("cloak-vault:"+relpath)[:16]>` for any other file — so multiple `.env` files never collide.
 
 ### Vault Binary Format
 

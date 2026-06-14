@@ -29,7 +29,7 @@ use colored::Colorize;
 ///
 /// Returns an error if the `.cloak` marker is missing, the keychain key cannot be
 /// retrieved, decryption fails, or any file I/O operation fails.
-pub fn run(key: String, value: String) -> Result<()> {
+pub fn run(key: String, value: String, file: Option<String>) -> Result<()> {
     let cwd = std::env::current_dir().context("Failed to determine current directory")?;
     let project_root = filemanager::find_project_root(&cwd)
         .ok_or_else(|| anyhow::anyhow!("Not a Cloak project. Run `cloak init` first."))?;
@@ -44,12 +44,8 @@ pub fn run(key: String, value: String) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to compute project hash: {}", e))?;
     let enc_key = keychain::get_key(&hash)?;
 
-    // 3. Get first protected file.
-    let rel_path = marker
-        .protected
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("No protected files found."))?
-        .clone();
+    // 3. Resolve which protected file to write to.
+    let rel_path = filemanager::resolve_target_file(&marker.protected, file.as_deref())?;
 
     // 4. Decrypt vault and parse.
     let real_content = filemanager::read_real(&project_root, &rel_path, &enc_key)?;

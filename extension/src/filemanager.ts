@@ -50,13 +50,15 @@ async function vaultsDir(): Promise<string> {
 }
 
 /**
- * Returns the vault file path for the given project root.
- * Format: <vaultsDir>/<projectHash>.vault
+ * Returns the vault file path for `relPath` within the given project root.
+ * Format: <vaultsDir>/<vaultId>.vault — one vault per protected file so that
+ * multiple `.env` files in a project never collide (see vault.vaultId).
  */
-export async function vaultFilePath(projectRoot: string): Promise<string> {
+export async function vaultFilePath(projectRoot: string, relPath: string): Promise<string> {
     const hash = vault.projectHash(projectRoot);
+    const id = vault.vaultId(hash, relPath);
     const dir = await vaultsDir();
-    return path.join(dir, `${hash}.vault`);
+    return path.join(dir, `${id}.vault`);
 }
 
 /**
@@ -140,7 +142,7 @@ export async function protectFile(
     const hash = vault.projectHash(projectRoot);
 
     // Check if already protected (vault already exists).
-    const vPath = await vaultFilePath(projectRoot);
+    const vPath = await vaultFilePath(projectRoot, relPath);
     let alreadyProtected = false;
     try {
         await fs.access(vPath);
@@ -196,7 +198,7 @@ export async function unprotectFile(
     await atomicWriteStr(envPath, realContent);
 
     // Remove vault file.
-    const vPath = await vaultFilePath(projectRoot);
+    const vPath = await vaultFilePath(projectRoot, relPath);
     try {
         await fs.unlink(vPath);
     } catch { /* vault may not exist */ }
@@ -217,7 +219,7 @@ export async function readReal(
     relPath: string,
     key: Buffer,
 ): Promise<string> {
-    const vPath = await vaultFilePath(projectRoot);
+    const vPath = await vaultFilePath(projectRoot, relPath);
 
     // Check for missing vault.
     let vaultExists = false;
@@ -263,7 +265,7 @@ export async function saveReal(
     content: string,
     key: Buffer,
 ): Promise<void> {
-    const vPath = await vaultFilePath(projectRoot);
+    const vPath = await vaultFilePath(projectRoot, relPath);
     const hash = vault.projectHash(projectRoot);
     const envPath = path.join(projectRoot, relPath);
 

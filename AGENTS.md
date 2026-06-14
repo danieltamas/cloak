@@ -48,13 +48,13 @@ Editor buffer ──────────────────────
                                        │        ~/Library/Application Support/cloak/   (macOS)
    .env on disk ◄── sandbox values ────┤        %APPDATA%\cloak\   (Windows)
    (what AI agents read)               │          vaults/
-                                       │            <hash>.vault     AES-256-GCM(secrets)
-   cloak run / peek / edit / reveal ───┤            <hash>.recovery  AES-256-GCM(keychain_key) w/ PBKDF2 key
-        │                              │            <hash>.auth      PBKDF2-SHA256(password)
+                                       │            <vault_id>.vault  AES-256-GCM(secrets), one per protected file
+   cloak run / peek / edit / reveal ───┤            <hash>.recovery   AES-256-GCM(keychain_key) w/ PBKDF2 key
+        │                              │            <hash>.auth       PBKDF2-SHA256(password)
         └── Touch ID or password gate ─┘
 ```
 
-`<hash>` = first 16 hex chars of SHA-256 over the canonicalized forward-slash-normalized project root path. **Identical across CLI and extension** — this is the primary cross-compat anchor.
+`<hash>` = first 16 hex chars of SHA-256 over the canonicalized forward-slash-normalized project root path. **Identical across CLI and extension** — this is the primary cross-compat anchor. `<vault_id>` = `<hash>` for the root `.env`, else `<hash>-<sha256("cloak-vault:"+relpath)[:16]>` so multiple `.env` files get separate vaults (recovery/auth stay one-per-project).
 
 ### Vault binary format (`CLK`)
 
@@ -126,7 +126,7 @@ From the graphify knowledge graph:
 ## Critical Rules
 
 - **The vault and recovery binary formats are a public contract.** Any change requires: bumped version byte, updated spec in `ARCHITECTURE.md` + `llms.txt` + `SPECS.md`, new cross-compat fixtures in `testdata/`, and matching implementations in both CLI and extension shipped in the same release. Never change one side only.
-- **CLI and extension must stay algorithmically identical** for: `project_hash` / `projectHash`, `deterministic_hex` / `deterministicHex`, PBKDF2-SHA256 parameters, AES-256-GCM parameters, sandbox generation, secret detection rules. Cross-compat is enforced by **33 known-vector tests** (`testdata/`) — do not edit a fixture without regenerating it in both implementations.
+- **CLI and extension must stay algorithmically identical** for: `project_hash` / `projectHash`, `vault_id` / `vaultId` (per-file vault filename scheme), `deterministic_hex` / `deterministicHex`, PBKDF2-SHA256 parameters, AES-256-GCM parameters, sandbox generation, secret detection rules. Cross-compat is enforced by known-vector tests — do not edit a fixture without regenerating it in both implementations.
 - **Fail toward visibility.** Decrypt failure → show sandbox with warning. Encrypt failure → save real values. A temporary leak beats permanent data loss.
 - **Zero network calls** other than `cloak update` (GitHub releases). No telemetry, no analytics, no cloud.
 - **Non-interactive = deny.** If there is no TTY, any auth-requiring command must refuse. Piped input / scripted access is an AI-agent vector.
@@ -207,7 +207,6 @@ macOS release binaries are **ad-hoc codesigned** to prevent Keychain access prom
 
 - Linux headless: no file-based keychain fallback yet (D-Bus Secret Service required).
 - Windows: default NTFS ACLs, no per-user restriction, no Windows Hello.
-- Single `.env` per project (multi-file planned).
 
 ---
 

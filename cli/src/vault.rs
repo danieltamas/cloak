@@ -145,19 +145,44 @@ pub fn is_vault(data: &[u8]) -> bool {
     data.len() >= 3 && &data[0..3] == MAGIC
 }
 
-/// Returns the absolute path for the vault file of the given `project_root`.
+/// Derive the per-file vault identifier from a project hash and the env file's
+/// path relative to the project root.
 ///
-/// The path is `<vaults_dir>/<project_hash>.vault`.
+/// Each protected `.env` file gets its own vault file so that multiple files
+/// under one project (e.g. `.env`, `.env.local`, `apps/api/.env`) never collide.
+///
+/// Scheme (a cross-compat contract — must match the TypeScript `vaultId`):
+/// - Backslashes in `rel_path` are normalized to forward slashes first.
+/// - The canonical root file `.env` maps to the bare `project_hash` for
+///   backward compatibility with single-file vaults created before multi-file
+///   support existed.
+/// - Any other relative path maps to `<project_hash>-<suffix>`, where `suffix`
+///   is the first 16 hex chars of `SHA-256("cloak-vault:<normalized_rel_path>")`.
+pub fn vault_id(project_hash: &str, rel_path: &str) -> String {
+    let normalized = rel_path.replace('\\', "/");
+    if normalized == ".env" {
+        return project_hash.to_string();
+    }
+    let digest = Sha256::digest(format!("cloak-vault:{normalized}").as_bytes());
+    let suffix = &hex::encode(digest)[..16];
+    format!("{project_hash}-{suffix}")
+}
+
+/// Returns the absolute path for the vault file of `rel_path` within `project_root`.
+///
+/// The path is `<vaults_dir>/<vault_id>.vault` where `vault_id` is derived from
+/// the project hash and the file's relative path (see [`vault_id`]).
 ///
 /// # Errors
 /// Propagates errors from `vaults_dir()` or `project_hash()`.
-pub fn vault_path(project_root: &Path) -> Result<PathBuf, VaultError> {
+pub fn vault_path(project_root: &Path, rel_path: &str) -> Result<PathBuf, VaultError> {
     let hash = project_hash(project_root)?;
+    let id = vault_id(&hash, rel_path);
     let dir = vaults_dir().map_err(|e| {
         // anyhow::Error → std::io::Error (Other) → VaultError::Io
         std::io::Error::other(e.to_string())
     })?;
-    Ok(dir.join(format!("{hash}.vault")))
+    Ok(dir.join(format!("{id}.vault")))
 }
 
 /// Returns a 16-character hex string derived from SHA-256 of the canonicalized,

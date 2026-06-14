@@ -3,7 +3,8 @@
 //! Run with: `cd cli && cargo test --test filemanager_test -- --nocapture`
 
 use cloak::filemanager::{
-    protect_file, read_marker, read_real, save_real, unprotect_file, write_marker, CloakMarker,
+    protect_file, read_all_env_vars, read_marker, read_real, resolve_target_file, save_real,
+    unprotect_file, write_marker, CloakMarker,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -67,7 +68,7 @@ fn test_protect_creates_artifacts() {
     );
 
     // vault file exists in vaults dir
-    let v_path = cloak::vault::vault_path(&root).unwrap();
+    let v_path = cloak::vault::vault_path(&root, ".env").unwrap();
     assert!(v_path.exists(), "vault file must exist");
 
     // recovery file exists
@@ -94,7 +95,7 @@ fn test_protect_no_secrets() {
     assert_eq!(result.secret_count, 0, "should detect 0 secrets");
 
     // Vault must NOT have been created.
-    let v_path = cloak::vault::vault_path(&root).unwrap();
+    let v_path = cloak::vault::vault_path(&root, ".env").unwrap();
     assert!(
         !v_path.exists(),
         "vault must NOT exist when no secrets found"
@@ -220,7 +221,7 @@ fn test_unprotect_restores_original() {
     );
 
     // Vault must be removed.
-    let v_path = cloak::vault::vault_path(&root).unwrap();
+    let v_path = cloak::vault::vault_path(&root, ".env").unwrap();
     assert!(!v_path.exists(), "vault must be deleted after unprotect");
 
     // Marker protected list should be empty.
@@ -249,7 +250,7 @@ fn test_file_permissions_600() {
 
     protect_file(&root, ".env", &key, &rb).expect("protect");
 
-    let v_path = cloak::vault::vault_path(&root).unwrap();
+    let v_path = cloak::vault::vault_path(&root, ".env").unwrap();
     let r_path = cloak::recovery::recovery_path(&root).unwrap();
 
     let vault_mode = std::fs::metadata(&v_path).unwrap().permissions().mode() & 0o777;
@@ -276,7 +277,7 @@ fn test_corrupted_vault_error() {
     protect_file(&root, ".env", &key, &rb).expect("protect");
 
     // Corrupt the vault file.
-    let v_path = cloak::vault::vault_path(&root).unwrap();
+    let v_path = cloak::vault::vault_path(&root, ".env").unwrap();
     std::fs::write(&v_path, b"not a valid vault at all").unwrap();
 
     let err = read_real(&root, ".env", &key).expect_err("should fail with corrupted vault");
@@ -301,7 +302,7 @@ fn test_missing_vault_with_marker_error() {
     protect_file(&root, ".env", &key, &rb).expect("protect");
 
     // Remove the vault file manually (simulates lost keychain scenario).
-    let v_path = cloak::vault::vault_path(&root).unwrap();
+    let v_path = cloak::vault::vault_path(&root, ".env").unwrap();
     std::fs::remove_file(&v_path).unwrap();
 
     let err = read_real(&root, ".env", &key).expect_err("should fail with missing vault");
@@ -464,4 +465,122 @@ fn test_protect_preserves_comments_and_non_secrets() {
 
     println!("test_protect_preserves_comments_and_non_secrets OK");
     println!("sandbox content:\n{sandbox}");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-file: nested .env files each get their own vault (no collision)
+// ─────────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_multiple_files_get_separate_vaults() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    let key = test_key();
+    let rb = test_recovery_bytes();
+
+    // Root .env and a nested sub/.env, each with distinct secrets.
+    std::fs::write(
+        root.join(".env"),
+        "DATABASE_URL=postgres://root:rootpw@db:5432/app\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("sub")).unwrap();
+    std::fs::write(
+        root.join("sub").join(".env"),
+        "API_KEY=sk-subsubsubsubsubsubsubsubsubsubsub0123\n",
+    )
+    .unwrap();
+
+    protect_file(&root, ".env", &key, &rb).expect("protect root");
+    protect_file(&root, "sub/.env", &key, &rb).expect("protect nested");
+
+    // Distinct vault files, both present.
+    let v_root = cloak::vault::vault_path(&root, ".env").unwrap();
+    let v_sub = cloak::vault::vault_path(&root, "sub/.env").unwrap();
+    assert_ne!(v_root, v_sub, "nested file must use a different vault path");
+    assert!(v_root.exists() && v_sub.exists());
+
+    // Each vault decrypts to its OWN content — no collision/overwrite.
+    let root_real = read_real(&root, ".env", &key).unwrap();
+    let sub_real = read_real(&root, "sub/.env", &key).unwrap();
+    assert!(root_real.contains("root:rootpw@db"));
+    assert!(sub_real.contains("sk-subsubsub"));
+
+    // Marker lists both protected files.
+    let marker = read_marker(&root).unwrap().unwrap();
+    assert!(marker.protected.contains(&".env".to_string()));
+    assert!(marker.protected.contains(&"sub/.env".to_string()));
+
+    println!("test_multiple_files_get_separate_vaults OK");
+}
+
+#[test]
+fn test_read_all_env_vars_merges_later_overrides() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    let key = test_key();
+    let rb = test_recovery_bytes();
+
+    // Both files share a SHARED key; .env.local must win.
+    std::fs::write(
+        root.join(".env"),
+        "DATABASE_URL=postgres://a:apw@db/app\nSHARED=root\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join(".env.local"),
+        "API_KEY=sk-locallocallocallocallocallocal0123\nSHARED=override\n",
+    )
+    .unwrap();
+
+    protect_file(&root, ".env", &key, &rb).expect("protect .env");
+    protect_file(&root, ".env.local", &key, &rb).expect("protect .env.local");
+
+    let protected = vec![".env".to_string(), ".env.local".to_string()];
+    let merged = read_all_env_vars(&root, &protected, &key).unwrap();
+    let map: std::collections::HashMap<_, _> = merged.into_iter().collect();
+
+    assert_eq!(
+        map.get("SHARED").map(String::as_str),
+        Some("override"),
+        "later file (.env.local) must override earlier on key conflict"
+    );
+    assert!(map.contains_key("DATABASE_URL"), "root-only key preserved");
+    assert!(map.contains_key("API_KEY"), "local-only key preserved");
+
+    println!("test_read_all_env_vars_merges_later_overrides OK");
+}
+
+#[test]
+fn test_resolve_target_file() {
+    let protected = vec![".env".to_string(), "sub/.env".to_string()];
+
+    // Default prefers root .env.
+    assert_eq!(resolve_target_file(&protected, None).unwrap(), ".env");
+
+    // Explicit selection.
+    assert_eq!(
+        resolve_target_file(&protected, Some("sub/.env")).unwrap(),
+        "sub/.env"
+    );
+
+    // Backslash normalization on the requested path.
+    assert_eq!(
+        resolve_target_file(&protected, Some("sub\\.env")).unwrap(),
+        "sub/.env"
+    );
+
+    // Unknown file errors.
+    assert!(resolve_target_file(&protected, Some("nope/.env")).is_err());
+
+    // Empty protected list errors.
+    assert!(resolve_target_file(&[], None).is_err());
+
+    // Without a literal .env, default falls back to the first file.
+    let only_nested = vec!["sub/.env".to_string()];
+    assert_eq!(
+        resolve_target_file(&only_nested, None).unwrap(),
+        "sub/.env"
+    );
+
+    println!("test_resolve_target_file OK");
 }

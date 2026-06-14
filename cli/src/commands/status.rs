@@ -59,8 +59,9 @@ pub fn run() -> Result<()> {
     );
     println!();
 
-    // 4. Protected files.
+    // 4. Protected files (each with its own vault).
     println!("  {}", "Protected files:".bold());
+    let mut any_vault_missing = false;
     for rel_path in &marker.protected {
         let abs_path = project_root.join(rel_path);
         let exists_marker = if abs_path.exists() {
@@ -82,8 +83,21 @@ pub fn run() -> Result<()> {
             String::new()
         };
 
+        // Per-file vault presence.
+        let vault_present = vault::vault_path(&project_root, rel_path)
+            .map(|p| p.exists())
+            .unwrap_or(false);
+        if !vault_present {
+            any_vault_missing = true;
+        }
+        let vault_note = if vault_present {
+            String::new()
+        } else {
+            " — vault MISSING".red().bold().to_string()
+        };
+
         println!(
-            "    {} {}{}{}",
+            "    {} {}{}{}{}",
             exists_marker,
             rel_path.cyan(),
             secret_info.dimmed(),
@@ -91,21 +105,26 @@ pub fn run() -> Result<()> {
                 String::new()
             } else {
                 " (missing)".red().to_string()
-            }
+            },
+            vault_note,
         );
     }
     println!();
 
-    // 5. Vault location.
-    let vault_path = vault::vault_path(&project_root)
-        .map_err(|e| anyhow::anyhow!("Failed to compute vault path: {}", e))?;
-    let vault_status = if vault_path.exists() {
-        "present".green().to_string()
+    // 5. Vault summary.
+    let vaults_dir = vault::vault_path(&project_root, ".env")
+        .map(|p| p.parent().map(|d| d.display().to_string()).unwrap_or_default())
+        .unwrap_or_default();
+    let vault_status = if any_vault_missing {
+        "one or more MISSING — run `cloak recover`"
+            .red()
+            .bold()
+            .to_string()
     } else {
-        "MISSING — run `cloak recover`".red().bold().to_string()
+        "all present".green().to_string()
     };
-    println!("  {} {}", "Vault:".bold(), vault_status);
-    println!("    {}", vault_path.display().to_string().dimmed());
+    println!("  {} {}", "Vaults:".bold(), vault_status);
+    println!("    {}", vaults_dir.dimmed());
     println!();
 
     // 6. Keychain status.

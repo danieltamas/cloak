@@ -13,11 +13,12 @@
  *   5. projectHash determinism and backslash normalization
  *   6. sandboxEnv / deterministicHex determinism
  *   7. PBKDF2 key derivation — known test vector
+ *   8. vaultId per-file vault scheme — known vectors
  */
 
 import { describe, it, expect } from 'vitest';
 import crypto from 'crypto';
-import { encrypt, decrypt, isVault, projectHash } from '../src/vault';
+import { encrypt, decrypt, isVault, projectHash, vaultId } from '../src/vault';
 import {
     generateRecoveryKey,
     parseRecoveryKey,
@@ -348,5 +349,40 @@ describe('Cross-compatibility — Test 7: PBKDF2 determinism and known vector', 
         const plaintext = 'API_SECRET=my-real-secret-value\n';
         const vaultBytes = encrypt(plaintext, recoveredKey);
         expect(decrypt(vaultBytes, recoveredKey)).toBe(plaintext);
+    });
+});
+
+// ── Test 8: vaultId — per-file vault scheme (must match Rust vault_id) ────────
+
+describe('Cross-compatibility — Test 8: vaultId per-file vault scheme', () => {
+    const HASH = '7b4d1b0b25658663';
+
+    it('root .env maps to the bare project hash (backward compatible)', () => {
+        expect(vaultId(HASH, '.env')).toBe(HASH);
+    });
+
+    it('known vectors match the Rust implementation', () => {
+        // suffix = SHA-256("cloak-vault:<relPath>").hex().slice(0, 16)
+        const expectedNested = crypto
+            .createHash('sha256')
+            .update('cloak-vault:dir/.env')
+            .digest('hex')
+            .substring(0, 16);
+        expect(expectedNested).toBe('1c9f564a0939ba7a'); // known value for Rust cross-check
+        expect(vaultId(HASH, 'dir/.env')).toBe(`${HASH}-1c9f564a0939ba7a`);
+        expect(vaultId(HASH, 'apps/api/.env')).toBe(`${HASH}-a8984bf6513eb2fc`);
+    });
+
+    it('normalizes backslashes before hashing', () => {
+        expect(vaultId(HASH, 'dir\\.env')).toBe(vaultId(HASH, 'dir/.env'));
+    });
+
+    it('produces distinct ids for distinct files', () => {
+        const root = vaultId(HASH, '.env');
+        const local = vaultId(HASH, '.env.local');
+        const nested = vaultId(HASH, 'apps/api/.env');
+        expect(root).not.toBe(local);
+        expect(root).not.toBe(nested);
+        expect(local).not.toBe(nested);
     });
 });

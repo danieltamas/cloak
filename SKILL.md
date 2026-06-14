@@ -42,6 +42,11 @@ cloak run docker compose up
 
 Do NOT try to read secrets from the vault and inject them manually. `cloak run` handles authentication (Touch ID on macOS, password on other platforms) — the developer will be prompted, and that is expected.
 
+A project can protect multiple `.env` files (e.g. `.env`, `.env.local`, and nested
+ones like `apps/api/.env`). `cloak run` decrypts and merges **all** of them; if the
+same key appears in more than one file, the later file wins (`.env.local` overrides
+`.env`, a deeper directory overrides the root). One `cloak run` covers the whole repo.
+
 ### Adding or updating secrets
 
 Use `cloak set` with the key and value as separate arguments:
@@ -61,6 +66,10 @@ To add/remove keys, change comments, or restructure the file, use:
 cloak edit          # opens real values in $EDITOR, re-encrypts on save
 cloak set KEY VALUE # add or update a single key
 ```
+
+`cloak edit` and `cloak set` act on the root `.env` by default. To target another
+protected file, add `--file <relpath>` (e.g. `cloak set KEY VALUE --file apps/api/.env`).
+Run `cloak status` to see every protected file.
 
 Do NOT directly edit `.env` when `.cloak` is present.
 

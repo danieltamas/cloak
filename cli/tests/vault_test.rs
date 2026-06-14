@@ -2,7 +2,7 @@
 //!
 //! Run with: `cd cli && cargo test --test vault_test -- --nocapture`
 
-use cloak::vault::{decrypt, encrypt, is_vault, project_hash, VaultError};
+use cloak::vault::{decrypt, encrypt, is_vault, project_hash, vault_id, VaultError};
 use std::path::PathBuf;
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -284,4 +284,47 @@ fn version_byte_checked() {
         "expected UnsupportedVersion, got {result:?}"
     );
     println!("version byte checked OK");
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 18. vault_id — per-file vault identifier scheme (cross-compat contract)
+// ──────────────────────────────────────────────────────────────────────────────
+#[test]
+fn vault_id_root_env_is_backward_compatible() {
+    // The canonical root `.env` must map to the bare project hash so that
+    // single-file vaults created before multi-file support keep working.
+    let hash = "7b4d1b0b25658663";
+    assert_eq!(vault_id(hash, ".env"), hash);
+}
+
+#[test]
+fn vault_id_known_vectors() {
+    // Known vectors — must match the TypeScript `vaultId`. The suffix is the
+    // first 16 hex chars of SHA-256("cloak-vault:<normalized_rel_path>").
+    let hash = "7b4d1b0b25658663";
+    assert_eq!(
+        vault_id(hash, "dir/.env"),
+        format!("{hash}-1c9f564a0939ba7a")
+    );
+    assert_eq!(
+        vault_id(hash, "apps/api/.env"),
+        format!("{hash}-a8984bf6513eb2fc")
+    );
+}
+
+#[test]
+fn vault_id_normalizes_backslashes() {
+    let hash = "abc123";
+    assert_eq!(vault_id(hash, "dir\\.env"), vault_id(hash, "dir/.env"));
+}
+
+#[test]
+fn vault_id_distinct_per_file() {
+    let hash = "abc123";
+    let root = vault_id(hash, ".env");
+    let local = vault_id(hash, ".env.local");
+    let nested = vault_id(hash, "apps/api/.env");
+    assert_ne!(root, local, "root .env and .env.local must differ");
+    assert_ne!(root, nested);
+    assert_ne!(local, nested);
 }

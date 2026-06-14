@@ -37,12 +37,22 @@ Linux:   ~/.config/cloak/
 Windows: %APPDATA%\cloak\
 
   vaults/
-    <hash>.vault          AES-256-GCM encrypted secret values
-    <hash>.recovery       Keychain key encrypted with recovery-derived key
-    <hash>.auth           PBKDF2-SHA256 hashed CLI access password (JSON)
+    <vault_id>.vault      AES-256-GCM encrypted secret values (one per protected file)
+    <hash>.recovery       Keychain key encrypted with recovery-derived key (one per project)
+    <hash>.auth           PBKDF2-SHA256 hashed CLI access password (JSON, one per project)
 ```
 
 `<hash>` = first 16 hex chars of SHA-256 of the canonicalized, forward-slash-normalized project root path. Identical across CLI and extension.
+
+`<vault_id>` identifies a single protected file within a project so that multiple
+`.env` files never collide:
+
+- The canonical root `.env` → `<hash>` (backward compatible with pre-multi-file vaults).
+- Any other relative path → `<hash>-<suffix>`, where `<suffix>` is the first 16 hex
+  chars of `SHA-256("cloak-vault:<forward-slash-normalized rel path>")`.
+
+This scheme is a cross-compat contract — `vault_id` (Rust) and `vaultId` (TypeScript)
+must produce identical names. Recovery and auth files remain one-per-project.
 
 ## Vault Binary Format
 
@@ -230,5 +240,20 @@ Cross-compat tests verify that both implementations produce identical output for
 - **Linux headless**: Keychain requires D-Bus Secret Service. No file-based fallback yet.
 - **Windows file permissions**: Vault/auth files use default NTFS ACLs (no per-user restriction).
 - **Windows biometric**: No Windows Hello support. Password-only auth.
-- **Single .env per project**: Protects the first `.env` file found. Multi-file support planned.
 - **Binary size**: ~3MB stripped. Could be smaller with feature flags.
+
+## Multiple `.env` files
+
+`cloak init` recursively scans the project (subdirectories up to depth 5, skipping
+`node_modules`, build output, and dot-directories) and protects every `.env*` file
+that contains a secret. All discovered files are listed in a single `.cloak` marker's
+`protected` array, and each gets its own vault file (see `<vault_id>` above).
+
+- `cloak run <cmd>` and `cloak export` decrypt **every** protected file and merge the
+  variables. On a key conflict, later files in the list win (dotenv-style: `.env.local`
+  overrides `.env`, a deeper directory overrides the root).
+- `cloak peek` shows every file; `cloak status` lists each file with its own vault state.
+- `cloak edit` / `cloak set` / `cloak reveal` act on the root `.env` by default; pass
+  `--file <relpath>` to target another protected file.
+- The VS Code extension decrypts each file against its own vault and the "Cloak Terminal"
+  merges all protected files with the same precedence.

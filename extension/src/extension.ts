@@ -229,13 +229,20 @@ async function runActivationCheck(context: vscode.ExtensionContext): Promise<voi
                 const marker = await filemanager.readMarker(projectRoot);
                 if (!marker) continue;
 
-                // .cloak marker exists → check vault and keychain
-                try {
-                    const vPath = await filemanager.vaultFilePath(projectRoot);
-                    await fs.access(vPath);
-                } catch {
+                // .cloak marker exists → check every protected file's vault and keychain
+                let missingVault = false;
+                for (const relPath of marker.protected) {
+                    try {
+                        const vPath = await filemanager.vaultFilePath(projectRoot, relPath);
+                        await fs.access(vPath);
+                    } catch {
+                        missingVault = true;
+                        break;
+                    }
+                }
+                if (missingVault) {
                     void vscode.window.showWarningMessage(
-                        `Cloak: Vault file is missing for ${path.relative(folderRoot, projectRoot) || 'project'}. Your .env may be unprotected.`,
+                        `Cloak: A vault file is missing for ${path.relative(folderRoot, projectRoot) || 'project'}. Your .env may be unprotected.`,
                     );
                     continue;
                 }
@@ -373,7 +380,7 @@ async function handleWillSave(doc: vscode.TextDocument): Promise<vscode.TextEdit
     try {
         // Encrypt to vault (before disk write, so vault is always up to date)
         const vaultBytes = vault.encrypt(bufferContent, key);
-        const vPath = await filemanager.vaultFilePath(projectRoot);
+        const vPath = await filemanager.vaultFilePath(projectRoot, relPath);
         await fs.writeFile(vPath + '.tmp', vaultBytes);
         await fs.rename(vPath + '.tmp', vPath);
     } catch (err) {

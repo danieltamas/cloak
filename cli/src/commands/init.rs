@@ -17,7 +17,7 @@ use colored::Colorize;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
-/// Candidate `.env` files scanned during `cloak init`.
+/// Candidate `.env` file names scanned during `cloak init`, in each directory.
 const ENV_FILES: &[&str] = &[
     ".env",
     ".env.local",
@@ -26,6 +26,14 @@ const ENV_FILES: &[&str] = &[
     ".env.staging",
     ".env.test",
 ];
+
+/// Maximum directory depth to descend when scanning for nested `.env` files.
+/// 0 = project root only. Mirrors the extension's project-discovery cap.
+const MAX_SCAN_DEPTH: usize = 5;
+
+/// Directory names skipped during the recursive scan. Dot-directories
+/// (`.git`, `.venv`, …) are skipped separately via a `.`-prefix check.
+const IGNORE_DIRS: &[&str] = &["node_modules", "dist", "build", "target", "vendor", "coverage"];
 
 /// Text appended to `CLAUDE.md` when it exists in the project root.
 const CLAUDE_MD_APPEND: &str = r#"
@@ -233,29 +241,66 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
-/// Scans the candidate env file list and returns `(rel_path, secret_count)` pairs
-/// for files that exist and contain at least one detected secret.
+/// Recursively scans `project_root` (and subdirectories up to [`MAX_SCAN_DEPTH`])
+/// for candidate env files and returns `(rel_path, secret_count)` pairs for files
+/// that contain at least one detected secret.
+///
+/// Relative paths are forward-slash normalized so they match across platforms and
+/// the TypeScript implementation. `node_modules`, build output, and dot-directories
+/// are skipped to avoid encrypting vendored or example `.env` files. Symlinked
+/// directories are not followed.
 fn scan_env_files(project_root: &Path) -> Vec<(String, usize)> {
     let mut results = Vec::new();
+    scan_dir(project_root, project_root, 0, &mut results);
+    // Deterministic order: shallower/root first, then lexicographic.
+    results.sort_by(|a, b| a.0.cmp(&b.0));
+    results
+}
 
+/// Recursive worker for [`scan_env_files`].
+fn scan_dir(project_root: &Path, dir: &Path, depth: usize, results: &mut Vec<(String, usize)>) {
+    // Check candidate env files in this directory.
     for &candidate in ENV_FILES {
-        let full_path = project_root.join(candidate);
-        if !full_path.exists() {
+        let full_path = dir.join(candidate);
+        if !full_path.is_file() {
             continue;
         }
-
         let content = match std::fs::read_to_string(&full_path) {
             Ok(c) => c,
             Err(_) => continue,
         };
-
         let count = count_secrets(&content);
         if count > 0 {
-            results.push((candidate.to_string(), count));
+            let rel = full_path
+                .strip_prefix(project_root)
+                .unwrap_or(&full_path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            results.push((rel, count));
         }
     }
 
-    results
+    if depth >= MAX_SCAN_DEPTH {
+        return;
+    }
+
+    // Recurse into subdirectories, skipping ignored and dot-directories.
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        // file_type() does not follow symlinks, so symlinked dirs are skipped.
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with('.') || IGNORE_DIRS.contains(&name.as_ref()) {
+            continue;
+        }
+        scan_dir(project_root, &entry.path(), depth + 1, results);
+    }
 }
 
 /// Parses a `.env` file content and returns the number of detected secrets.
@@ -287,4 +332,74 @@ fn append_claude_md(path: &Path) -> Result<()> {
     file.write_all(CLAUDE_MD_APPEND.as_bytes())
         .with_context(|| format!("Failed to append to {}", path.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `.env` line the detector reliably flags as a secret.
+    const SECRET_LINE: &str = "DATABASE_URL=postgres://user:password@localhost:5432/db\n";
+
+    #[test]
+    fn scan_finds_nested_env_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        std::fs::write(root.join(".env"), SECRET_LINE).unwrap();
+        std::fs::create_dir_all(root.join("apps/api")).unwrap();
+        std::fs::write(root.join("apps/api/.env"), SECRET_LINE).unwrap();
+
+        let found: Vec<String> = scan_env_files(root).into_iter().map(|(p, _)| p).collect();
+        assert!(found.contains(&".env".to_string()), "root .env found");
+        assert!(
+            found.contains(&"apps/api/.env".to_string()),
+            "nested apps/api/.env found, got {found:?}"
+        );
+    }
+
+    #[test]
+    fn scan_skips_ignored_and_dot_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        std::fs::write(root.join(".env"), SECRET_LINE).unwrap();
+        for ignored in ["node_modules/pkg", "dist", ".hidden"] {
+            std::fs::create_dir_all(root.join(ignored)).unwrap();
+            std::fs::write(root.join(ignored).join(".env"), SECRET_LINE).unwrap();
+        }
+
+        let found: Vec<String> = scan_env_files(root).into_iter().map(|(p, _)| p).collect();
+        assert_eq!(found, vec![".env".to_string()], "only root .env, got {found:?}");
+    }
+
+    #[test]
+    fn scan_excludes_files_without_secrets() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        std::fs::write(root.join(".env"), SECRET_LINE).unwrap();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(root.join("config/.env"), "PORT=3000\nNODE_ENV=production\n").unwrap();
+
+        let found: Vec<String> = scan_env_files(root).into_iter().map(|(p, _)| p).collect();
+        assert_eq!(found, vec![".env".to_string()], "no-secret file excluded");
+    }
+
+    #[test]
+    fn scan_respects_max_depth() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        // Build a directory chain one level deeper than MAX_SCAN_DEPTH.
+        let mut deep = root.to_path_buf();
+        for _ in 0..(MAX_SCAN_DEPTH + 1) {
+            deep = deep.join("d");
+        }
+        std::fs::create_dir_all(&deep).unwrap();
+        std::fs::write(deep.join(".env"), SECRET_LINE).unwrap();
+
+        let found = scan_env_files(root);
+        assert!(found.is_empty(), "file beyond depth cap must be skipped, got {found:?}");
+    }
 }

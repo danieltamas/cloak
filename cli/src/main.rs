@@ -143,8 +143,12 @@ struct Cli {
 enum Commands {
     /// Initialize Cloak protection for a .env file
     Init,
-    /// Edit the protected .env file with real values
-    Edit,
+    /// Edit a protected .env file with real values
+    Edit {
+        /// Which protected file to edit (default: .env). Use `cloak status` to list them.
+        #[arg(long, short = 'f')]
+        file: Option<String>,
+    },
     /// Run a command with real environment variables injected
     Run {
         /// Command and arguments to run
@@ -159,6 +163,9 @@ enum Commands {
         key: String,
         /// The value to set
         value: String,
+        /// Which protected file to set it in (default: .env)
+        #[arg(long, short = 'f')]
+        file: Option<String>,
     },
     /// Reveal the real value of a key
     Reveal {
@@ -167,6 +174,9 @@ enum Commands {
         /// Duration in seconds to reveal (default 30)
         #[arg(long, default_value = "30")]
         duration: u64,
+        /// Which protected file to read the key from (default: .env)
+        #[arg(long, short = 'f')]
+        file: Option<String>,
     },
     /// Export decrypted env vars as JSON (for tool integration)
     Export,
@@ -199,11 +209,15 @@ fn run(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
         Commands::Init => commands::init::run(),
         Commands::Recover => commands::recover::run(),
-        Commands::Edit => commands::edit::run(),
+        Commands::Edit { file } => commands::edit::run(file),
         Commands::Run { command } => commands::run::run(command),
         Commands::Peek => commands::peek::run(),
-        Commands::Set { key, value } => commands::set::run(key, value),
-        Commands::Reveal { key, duration } => commands::reveal::run(key, duration),
+        Commands::Set { key, value, file } => commands::set::run(key, value, file),
+        Commands::Reveal {
+            key,
+            duration,
+            file,
+        } => commands::reveal::run(key, duration, file),
         Commands::Export => commands::export::run(),
         Commands::Unprotect => commands::unprotect::run(),
         Commands::Status => commands::status::run(),
