@@ -115,7 +115,7 @@ pub fn protect_file(
         .map_err(|e| anyhow!("Failed to compute project hash: {e}"))?;
 
     // Check if already protected (vault already exists).
-    let v_path = vault::vault_path(project_root)
+    let v_path = vault::vault_path(project_root, rel_path)
         .map_err(|e| anyhow!("Failed to compute vault path: {e}"))?;
 
     let already_protected = v_path.exists();
@@ -178,7 +178,7 @@ pub fn unprotect_file(project_root: &Path, rel_path: &str, key: &[u8; 32]) -> Re
         .with_context(|| format!("Failed to restore {}", env_path.display()))?;
 
     // Remove vault file.
-    let v_path = vault::vault_path(project_root)
+    let v_path = vault::vault_path(project_root, rel_path)
         .map_err(|e| anyhow!("Failed to compute vault path: {e}"))?;
     if v_path.exists() {
         std::fs::remove_file(&v_path)
@@ -203,7 +203,7 @@ pub fn unprotect_file(project_root: &Path, rel_path: &str, key: &[u8; 32]) -> Re
 /// - If the decrypted content does not contain at least one `=` (sanity check), returns
 ///   an error mentioning possible corruption.
 pub fn read_real(project_root: &Path, rel_path: &str, key: &[u8; 32]) -> Result<String> {
-    let v_path = vault::vault_path(project_root)
+    let v_path = vault::vault_path(project_root, rel_path)
         .map_err(|e| anyhow!("Failed to compute vault path: {e}"))?;
 
     // Check for missing vault when a marker is present.
@@ -243,6 +243,88 @@ pub fn read_real(project_root: &Path, rel_path: &str, key: &[u8; 32]) -> Result<
     Ok(plaintext)
 }
 
+/// Resolve which protected file a single-file command (`edit`, `set`, `reveal`)
+/// should operate on.
+///
+/// - `requested` (from `--file`) must name a path in `protected` (matched after
+///   forward-slash normalization), otherwise an error lists the available files.
+/// - When omitted: the root `.env` is used if protected, else the first file.
+///
+/// # Errors
+///
+/// Returns an error if `protected` is empty or `requested` names an unprotected file.
+pub fn resolve_target_file(protected: &[String], requested: Option<&str>) -> Result<String> {
+    if protected.is_empty() {
+        anyhow::bail!("No protected files found.");
+    }
+    match requested {
+        Some(req) => {
+            let norm = req.replace('\\', "/");
+            protected
+                .iter()
+                .find(|p| p.as_str() == norm)
+                .cloned()
+                .ok_or_else(|| {
+                    anyhow!(
+                        "File '{}' is not protected. Protected files: {}",
+                        req,
+                        protected.join(", ")
+                    )
+                })
+        }
+        None => Ok(protected
+            .iter()
+            .find(|p| p.as_str() == ".env")
+            .cloned()
+            .unwrap_or_else(|| protected[0].clone())),
+    }
+}
+
+/// Decrypt every file in `protected` (in marker order) and return the merged
+/// `(key, value)` assignments with real values.
+///
+/// Merge semantics (dotenv-style): later files in the list override earlier ones
+/// on a key conflict, and a later assignment within a single file overrides an
+/// earlier one. Keys keep their first-seen order. This is what `cloak run` and
+/// `cloak export` inject so that a project with multiple `.env` files (e.g.
+/// `.env` + `.env.local`, or root + `apps/api/.env`) is covered by one command.
+///
+/// # Errors
+///
+/// Returns an error (naming the file) if any protected file's vault cannot be
+/// read or decrypted — partial environments are never silently injected.
+pub fn read_all_env_vars(
+    project_root: &Path,
+    protected: &[String],
+    key: &[u8; 32],
+) -> Result<Vec<(String, String)>> {
+    use std::collections::HashMap;
+
+    let mut order: Vec<String> = Vec::new();
+    let mut map: HashMap<String, String> = HashMap::new();
+
+    for rel_path in protected {
+        let content = read_real(project_root, rel_path, key)
+            .with_context(|| format!("Failed to read protected file {rel_path}"))?;
+        for line in envparser::parse(&content) {
+            if let envparser::EnvLine::Assignment { key: k, value: v, .. } = line {
+                if !map.contains_key(&k) {
+                    order.push(k.clone());
+                }
+                map.insert(k, v);
+            }
+        }
+    }
+
+    Ok(order
+        .into_iter()
+        .map(|k| {
+            let v = map.remove(&k).unwrap_or_default();
+            (k, v)
+        })
+        .collect())
+}
+
 /// Save new real content: encrypt to vault and write sandbox version to disk.
 ///
 /// Both the vault and the on-disk `.env` (sandbox) are written atomically.
@@ -252,7 +334,7 @@ pub fn read_real(project_root: &Path, rel_path: &str, key: &[u8; 32]) -> Result<
 /// Returns an error if encryption fails or any file write fails.
 pub fn save_real(project_root: &Path, rel_path: &str, content: &str, key: &[u8; 32]) -> Result<()> {
     // Compute paths.
-    let v_path = vault::vault_path(project_root)
+    let v_path = vault::vault_path(project_root, rel_path)
         .map_err(|e| anyhow!("Failed to compute vault path: {e}"))?;
     let hash = vault::project_hash(project_root)
         .map_err(|e| anyhow!("Failed to compute project hash: {e}"))?;

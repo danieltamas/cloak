@@ -250,7 +250,7 @@ async function cmdOpenCloakTerminal(): Promise<void> {
     );
     if (confirmed !== 'Open Terminal') return;
 
-    // Find the first protected .env file in the workspace
+    // Find protected .env files in the workspace
     for (const folder of folders) {
         const projectRoot = folder.uri.fsPath;
         const marker = await filemanager.readMarker(projectRoot);
@@ -264,22 +264,22 @@ async function cmdOpenCloakTerminal(): Promise<void> {
             return;
         }
 
-        const relPath = marker.protected[0];
-        let realContent: string;
+        // Merge real env vars from every protected file. Later files in the
+        // marker override earlier ones on key conflict (dotenv-style) — same
+        // semantics as `cloak run`.
+        const envVars: Record<string, string> = {};
         try {
-            realContent = await filemanager.readReal(projectRoot, relPath, key);
+            for (const relPath of marker.protected) {
+                const realContent = await filemanager.readReal(projectRoot, relPath, key);
+                for (const line of envparser.parse(realContent)) {
+                    if (line.type === 'assignment') {
+                        envVars[line.key] = line.value;
+                    }
+                }
+            }
         } catch (err) {
             void vscode.window.showErrorMessage(`Cloak: Cannot read vault. ${String(err)}`);
             return;
-        }
-
-        // Parse real env vars
-        const lines = envparser.parse(realContent);
-        const envVars: Record<string, string> = {};
-        for (const line of lines) {
-            if (line.type === 'assignment') {
-                envVars[line.key] = line.value;
-            }
         }
 
         // Open terminal with env vars

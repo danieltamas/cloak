@@ -40,32 +40,46 @@ pub fn run() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to compute project hash: {}", e))?;
     let key = keychain::get_key(&hash)?;
 
-    // 3. Get first protected file.
-    let rel_path = marker
-        .protected
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("No protected files found."))?;
+    if marker.protected.is_empty() {
+        anyhow::bail!("No protected files found.");
+    }
 
-    // 4. Decrypt vault → parse real values.
-    let real_content = filemanager::read_real(&project_root, rel_path, &key)?;
-    let real_lines = envparser::parse(&real_content);
-    let real_map: HashMap<String, String> = real_lines
-        .into_iter()
-        .filter_map(|line| {
-            if let envparser::EnvLine::Assignment { key, value, .. } = line {
-                Some((key, value))
-            } else {
-                None
+    // 3. Render a comparison table per protected file.
+    let multiple = marker.protected.len() > 1;
+    for (i, rel_path) in marker.protected.iter().enumerate() {
+        if multiple {
+            if i > 0 {
+                println!();
             }
-        })
-        .collect();
+            println!("{}", format!("── {} ──", rel_path).bold());
+        }
+        peek_file(&project_root, rel_path, &key)?;
+    }
 
-    // 5. Read sandbox .env from disk → parse.
+    Ok(())
+}
+
+/// Print the sandbox-vs-real comparison table for a single protected file.
+fn peek_file(project_root: &std::path::Path, rel_path: &str, key: &[u8; 32]) -> Result<()> {
+    // Decrypt vault → parse real values (vault is authoritative for key order).
+    let real_content = filemanager::read_real(project_root, rel_path, key)?;
+    let real_lines = envparser::parse(&real_content);
+    let mut real_map: HashMap<String, String> = HashMap::new();
+    let mut ordered_keys: Vec<String> = Vec::new();
+    for line in real_lines {
+        if let envparser::EnvLine::Assignment { key, value, .. } = line {
+            if !real_map.contains_key(&key) {
+                ordered_keys.push(key.clone());
+            }
+            real_map.insert(key, value);
+        }
+    }
+
+    // Read sandbox .env from disk → parse.
     let sandbox_path = project_root.join(rel_path);
     let sandbox_content = std::fs::read_to_string(&sandbox_path)
         .with_context(|| format!("Failed to read sandbox file {}", sandbox_path.display()))?;
-    let sandbox_lines = envparser::parse(&sandbox_content);
-    let sandbox_map: HashMap<String, String> = sandbox_lines
+    let sandbox_map: HashMap<String, String> = envparser::parse(&sandbox_content)
         .into_iter()
         .filter_map(|line| {
             if let envparser::EnvLine::Assignment { key, value, .. } = line {
@@ -76,21 +90,7 @@ pub fn run() -> Result<()> {
         })
         .collect();
 
-    // 6. Build the union of keys in insertion order from real (vault is authoritative).
-    // Parse again to preserve key order.
-    let real_content2 = filemanager::read_real(&project_root, rel_path, &key)?;
-    let ordered_keys: Vec<String> = envparser::parse(&real_content2)
-        .into_iter()
-        .filter_map(|line| {
-            if let envparser::EnvLine::Assignment { key, .. } = line {
-                Some(key)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // 7. Determine column widths.
+    // Determine column widths.
     let key_width = ordered_keys
         .iter()
         .map(|k| k.len())
@@ -98,7 +98,7 @@ pub fn run() -> Result<()> {
         .unwrap_or(3)
         .max(3);
 
-    // 8. Print header.
+    // Print header.
     println!(
         "{:<key_width$}  {:<MAX_VALUE_WIDTH$}  {}",
         "KEY".bold(),
@@ -113,7 +113,7 @@ pub fn run() -> Result<()> {
             .dimmed()
     );
 
-    // 9. Print rows.
+    // Print rows.
     for key in &ordered_keys {
         let real_val = real_map.get(key).map(|s| s.as_str()).unwrap_or("");
         let sandbox_val = sandbox_map.get(key).map(|s| s.as_str()).unwrap_or("");

@@ -47,3 +47,30 @@ export function projectHash(projectRoot: string): string {
     const normalized = projectRoot.replace(/\\/g, '/');
     return crypto.createHash('sha256').update(normalized).digest('hex').substring(0, 16);
 }
+
+/**
+ * Derive the per-file vault identifier from a project hash and the env file's
+ * path relative to the project root.
+ *
+ * Each protected `.env` file gets its own vault so multiple files under one
+ * project (e.g. `.env`, `.env.local`, `apps/api/.env`) never collide.
+ *
+ * Scheme (a cross-compat contract — must match the Rust `vault_id`):
+ * - Backslashes in `relPath` are normalized to forward slashes first.
+ * - The canonical root file `.env` maps to the bare `projectHash` for backward
+ *   compatibility with single-file vaults created before multi-file support.
+ * - Any other relative path maps to `<projectHash>-<suffix>`, where `suffix`
+ *   is the first 16 hex chars of `SHA-256("cloak-vault:<normalizedRelPath>")`.
+ */
+export function vaultId(projectHashValue: string, relPath: string): string {
+    const normalized = relPath.replace(/\\/g, '/');
+    if (normalized === '.env') {
+        return projectHashValue;
+    }
+    const suffix = crypto
+        .createHash('sha256')
+        .update('cloak-vault:' + normalized)
+        .digest('hex')
+        .substring(0, 16);
+    return `${projectHashValue}-${suffix}`;
+}
