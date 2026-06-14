@@ -1,3 +1,5 @@
+> Canonical rules are inherited from your harness global agent config (CANON) and are not repeated here. Only project-specific facts live below.
+
 # Cloak — Protect .env secrets from AI coding agents
 
 Cloak encrypts real `.env` credentials into an AES-256-GCM vault and leaves structurally valid **sandbox values** on disk. Editors decrypt transparently; AI agents read only sandbox. Two independent implementations share one binary contract.
@@ -262,6 +264,6 @@ Default answer is **no**. Extension ships zero runtime deps. If unavoidable, jus
 
 - **Before grepping:** check `graphify-out/GRAPH_REPORT.md` god nodes and community hubs.
 - **Architecture questions:** the graph is faster than reading individual files.
-- **After code changes:** `/graphify --update` (or run the watcher) keeps it current.
+- **After code changes:** run `/Users/danime/.local/pipx/venvs/graphifyy/bin/python -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` to keep the graph current (bare `python3` lacks the module).
 
 Key bridge nodes (high betweenness): `Architecture Overview`, `Biometric Keychain Design Spec`, `Keychain Backends Table`. If a change touches any of these concepts, the graph will show every community affected — use it as a checklist for which docs to sync.
