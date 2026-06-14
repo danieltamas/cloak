@@ -14,7 +14,7 @@ describe('detector', () => {
     });
 
     it('detects StripeKey (sk_live_)', () => {
-        const result = detect('STRIPE_KEY', 'sk_test_FAKE4eC39HqLyjWDarjtT1zd');
+        const result = detect('STRIPE_KEY', 'sk_live_abc123');
         expect(result.isSecret).toBe(true);
         expect(result.secretType).toBe('StripeKey');
     });

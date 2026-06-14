@@ -39,7 +39,7 @@ fn sandbox_database_url_redis() {
 fn sandbox_stripe_live_key() {
     let result = sandbox_value(
         "STRIPE_SECRET_KEY",
-        "sk_test_FAKE23xyz456def789ghi012jkl345",
+        "sk_live_abc123",
         &SecretType::StripeKey,
         PROJ,
     );
@@ -49,7 +49,7 @@ fn sandbox_stripe_live_key() {
     // pk_live_ also replaced
     let pk = sandbox_value(
         "STRIPE_PK",
-        "pk_test_FAKE23xyz456def789ghi012jkl345",
+        "pk_live_abc123",
         &SecretType::StripeKey,
         PROJ,
     );

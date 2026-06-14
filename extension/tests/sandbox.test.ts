@@ -48,12 +48,12 @@ describe('sandbox', () => {
     });
 
     it('Stripe live sk_ key → sk_test_cloak_sandbox_000000000000', () => {
-        const result = sandboxValue('STRIPE_SK', 'sk_test_FAKE4eC39HqLyjWDarjtT1zd', 'StripeKey', 'proj');
+        const result = sandboxValue('STRIPE_SK', 'sk_live_abc123', 'StripeKey', 'proj');
         expect(result).toBe('sk_test_cloak_sandbox_000000000000');
     });
 
     it('Stripe live pk_ key → pk_test_cloak_sandbox_000000000000', () => {
-        const result = sandboxValue('STRIPE_PK', 'pk_test_FAKEoMQauvdEDq54NiTphI7jx', 'StripeKey', 'proj');
+        const result = sandboxValue('STRIPE_PK', 'pk_live_abc123', 'StripeKey', 'proj');
         expect(result).toBe('pk_test_cloak_sandbox_000000000000');
     });
 

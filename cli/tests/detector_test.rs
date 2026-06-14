@@ -141,8 +141,8 @@ fn detect_non_secret() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[test]
 fn detect_by_value_pattern() {
-    // sk_live_ → StripeKey
-    let r1 = detect("PAYMENT_KEY", "sk_test_FAKE4eC39HqLyjWDarjtT1zd");
+    // sk_live_ → StripeKey (value-based, since PAYMENT_KEY isn't a Stripe key name)
+    let r1 = detect("PAYMENT_KEY", "sk_live_abc123");
     assert!(r1.is_secret);
     assert_eq!(r1.secret_type, Some(SecretType::StripeKey));
 
