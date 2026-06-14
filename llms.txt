@@ -38,10 +38,12 @@ Keychain key (256-bit, stored in OS keychain)
 
 ### File Locations
 
-- `project/.env` — sandbox values (fake credentials, structurally valid)
-- `project/.cloak` — JSON marker file (committed to git)
-- `~/.config/cloak/vaults/<hash>.vault` — AES-256-GCM encrypted secrets
-- `~/.config/cloak/vaults/<hash>.recovery` — keychain key encrypted with recovery-derived key
+- `project/.env` (and nested `.env` files, e.g. `apps/api/.env`) — sandbox values (fake credentials, structurally valid)
+- `project/.cloak` — JSON marker file (committed to git); lists every protected file
+- `~/.config/cloak/vaults/<vault-id>.vault` — AES-256-GCM encrypted secrets, one vault per protected file
+- `~/.config/cloak/vaults/<hash>.recovery` — keychain key encrypted with recovery-derived key (one per project)
+
+`<vault-id>` is the project `<hash>` for the root `.env`, otherwise `<hash>-<sha256("cloak-vault:"+relpath)[:16]>`, so multiple `.env` files never share a vault.
 
 ### Vault Format (binary)
 
@@ -74,14 +76,14 @@ Offset  Size    Content
 
 | Command | Description |
 |---------|-------------|
-| `cloak init` | Detect secrets, encrypt to vault, write sandbox to disk, show recovery key |
-| `cloak edit` | Open real values in $EDITOR, re-encrypt on save, secure-delete temp file |
-| `cloak run <cmd>` | Run command with real env vars injected, no file changes |
-| `cloak peek` | Compare sandbox vs real values side-by-side |
-| `cloak set KEY=VALUE` | Add or update a secret |
+| `cloak init` | Detect secrets in every `.env` (including nested), encrypt each to its own vault, write sandbox, show recovery key |
+| `cloak edit [--file <path>]` | Open real values in $EDITOR, re-encrypt on save, secure-delete temp file |
+| `cloak run <cmd>` | Run command with real env vars from all protected files merged (later file wins on conflict), no file changes |
+| `cloak peek` | Compare sandbox vs real values, per protected file |
+| `cloak set KEY=VALUE [--file <path>]` | Add or update a secret |
 | `cloak reveal KEY --duration 30` | Temporarily show real value in .env, auto-revert |
-| `cloak unprotect` | Restore original .env, delete vault |
-| `cloak status` | Show protection state |
+| `cloak unprotect` | Restore original .env files, delete vaults |
+| `cloak status` | Show protection state, per file |
 | `cloak recover` | Restore keychain key from recovery key |
 | `cloak update` | Self-update from GitHub releases |
 
