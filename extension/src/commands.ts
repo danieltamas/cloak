@@ -31,7 +31,7 @@ export interface CommandHelpers {
 
 export function register(context: vscode.ExtensionContext, helpers: CommandHelpers): void {
     context.subscriptions.push(
-        vscode.commands.registerCommand('cloak.init', () => cmdInit(helpers)),
+        vscode.commands.registerCommand('cloak.init', (presetRoot?: string) => cmdInit(helpers, presetRoot)),
         vscode.commands.registerCommand('cloak.peek', () => cmdPeek(helpers)),
         vscode.commands.registerCommand('cloak.unprotect', () => cmdUnprotect(helpers)),
         vscode.commands.registerCommand('cloak.openCloakTerminal', () => cmdOpenCloakTerminal()),
@@ -50,8 +50,11 @@ export function register(context: vscode.ExtensionContext, helpers: CommandHelpe
  *
  * When the project is already protected, the existing key is reused and the
  * recovery file is left untouched — only the newly-discovered files are added.
+ *
+ * `presetRoot` lets a caller (e.g. the onboarding prompt) pass the project root
+ * it already resolved, so the user is never asked to pick a workspace folder.
  */
-async function cmdInit(helpers: CommandHelpers): Promise<void> {
+async function cmdInit(helpers: CommandHelpers, presetRoot?: string): Promise<void> {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders || folders.length === 0) {
         void vscode.window.showErrorMessage('Cloak: No workspace folder open.');
@@ -62,7 +65,9 @@ async function cmdInit(helpers: CommandHelpers): Promise<void> {
     let projectRoot: string;
     const editor = vscode.window.activeTextEditor;
     const activeFolder = editor && vscode.workspace.getWorkspaceFolder(editor.document.uri);
-    if (activeFolder) {
+    if (presetRoot) {
+        projectRoot = presetRoot;
+    } else if (activeFolder) {
         projectRoot = activeFolder.uri.fsPath;
     } else if (folders.length === 1) {
         projectRoot = folders[0].uri.fsPath;

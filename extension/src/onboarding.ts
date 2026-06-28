@@ -36,7 +36,9 @@ export async function promptIfNeeded(
                 );
 
                 if (choice === 'Protect Now') {
-                    void vscode.commands.executeCommand('cloak.init');
+                    // Pass the resolved root so init never has to ask the user to
+                    // pick a workspace folder (the regression this fixes).
+                    void vscode.commands.executeCommand('cloak.init', projectRoot);
                 } else if (choice === "Don't Ask Again") {
                     await workspaceState.update('cloak.onboardingDismissed', true);
                 }
