@@ -221,7 +221,7 @@ Windows x86_64:     x86_64-pc-windows-msvc
 Extension:          .vsix (platform-independent)
 ```
 
-Release binaries are ad-hoc codesigned on macOS to prevent Keychain access prompts.
+Release binaries are ad-hoc codesigned on macOS **with the `keychain-access-groups` entitlement** (`cli/cloak.entitlements`). The entitlement is required for the data-protection (Touch ID) keychain — without it `SecItemAdd` fails with `errSecMissingEntitlement` and cloak falls back to the password-gated legacy login keychain.
 
 ## Test Suite
 

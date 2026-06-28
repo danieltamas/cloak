@@ -8,7 +8,7 @@ Cloak encrypts real `.env` credentials into an AES-256-GCM vault and leaves stru
 - **Extension** — TypeScript VS Code extension (`extension/`), zero runtime deps, same code works in Cursor / Windsurf / any VS Code fork
 - **Static site** — `index.html`, `llms.txt`, `SKILL.md`, `install.sh`, `install.ps1` served from `getcloak.dev`
 
-Current version: **0.4.1**. Early software — works end-to-end on macOS, tested on Linux, functional on Windows.
+Current version: **0.4.2**. Early software — works end-to-end on macOS, tested on Linux, functional on Windows.
 
 ---
 
@@ -204,7 +204,7 @@ x86_64-pc-windows-msvc
 extension .vsix             (platform-independent)
 ```
 
-macOS release binaries are **ad-hoc codesigned** to prevent Keychain access prompts — don't remove this step.
+macOS release binaries are **ad-hoc codesigned with the `keychain-access-groups` entitlement** (`codesign -s - --entitlements cli/cloak.entitlements --force`) — don't remove or weaken this step. The entitlement is **required** for the data-protection (Touch ID) keychain; ad-hoc signing *alone* is not sufficient (`SecItemAdd` fails with `errSecMissingEntitlement` and cloak silently falls back to the password-gated legacy login keychain).
 
 ### Known platform limitations (v0.1)
 

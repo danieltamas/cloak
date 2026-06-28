@@ -46,7 +46,7 @@ The public API of `keychain.rs` remains the same: `store_key`, `get_key`, `delet
 - Service: `cloak-bio` (distinct from legacy `cloak` to avoid conflicts during migration)
 - Account: `vault-<project_hash>` (same pattern as before)
 
-**Code signing:** Data protection keychain requires the binary to be codesigned. Distribution builds are already signed. Development builds need ad-hoc signing (`codesign --sign -`).
+**Code signing:** The data protection keychain requires the binary to be codesigned **and to carry the `keychain-access-groups` entitlement**. Ad-hoc signing *alone* is **not** sufficient — `SecItemAdd` fails with `errSecMissingEntitlement` (-34018) and the code silently falls back to the legacy login keychain. Sign with `codesign -s - --entitlements cli/cloak.entitlements --force <binary>` (release + dev builds alike). _(Original spec claimed ad-hoc alone was enough; that was wrong — corrected after the 0.4.x releases shipped without the entitlement.)_
 
 ### New CLI Subcommand: `cloak keychain-get`
 

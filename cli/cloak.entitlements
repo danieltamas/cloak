@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Required for the macOS data-protection keychain (Touch ID / biometric ACL).
+      Without this entitlement, SecItemAdd to the protected keychain fails with
+      errSecMissingEntitlement and cloak silently falls back to the legacy login
+      keychain (password prompts instead of Touch ID). Ad-hoc signing alone is NOT
+      sufficient — the binary must also carry this entitlement. See
+      cli/src/keychain/macos.rs (SERVICE = "cloak-bio", use_protected_keychain()).
+    -->
+    <key>keychain-access-groups</key>
+    <array>
+        <string>cloak</string>
+    </array>
+</dict>
+</plist>
