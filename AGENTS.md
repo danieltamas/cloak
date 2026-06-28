@@ -8,7 +8,7 @@ Cloak encrypts real `.env` credentials into an AES-256-GCM vault and leaves stru
 - **Extension** — TypeScript VS Code extension (`extension/`), zero runtime deps, same code works in Cursor / Windsurf / any VS Code fork
 - **Static site** — `index.html`, `llms.txt`, `SKILL.md`, `install.sh`, `install.ps1` served from `getcloak.dev`
 
-Current version: **0.4.2**. Early software — works end-to-end on macOS, tested on Linux, functional on Windows.
+Current version: **0.4.3**. Early software — works end-to-end on macOS, tested on Linux, functional on Windows.
 
 ---
 
@@ -204,7 +204,7 @@ x86_64-pc-windows-msvc
 extension .vsix             (platform-independent)
 ```
 
-macOS release binaries are **ad-hoc codesigned with the `keychain-access-groups` entitlement** (`codesign -s - --entitlements cli/cloak.entitlements --force`) — don't remove or weaken this step. The entitlement is **required** for the data-protection (Touch ID) keychain; ad-hoc signing *alone* is not sufficient (`SecItemAdd` fails with `errSecMissingEntitlement` and cloak silently falls back to the password-gated legacy login keychain).
+macOS release binaries are **plain ad-hoc codesigned** (`codesign -s -`) — keep this step, and do **not** add a `keychain-access-groups` (or any restricted) entitlement: AMFI SIGKILLs an ad-hoc binary that claims a restricted entitlement (`Killed: 9` on end-user machines — this bricked v0.4.2). Consequence: the data-protection (Touch ID) keychain (`cloak-bio`, `use_protected_keychain()`) **cannot** be used on freely-distributed builds — `SecItemAdd` returns `errSecMissingEntitlement`, so `keychain/mod.rs` silently falls back to the legacy login keychain. The Touch ID UX comes from the **`cloak-touchid` auth gate** (LAContext), not the keychain. Enabling the biometric keychain would require a real Apple Developer ID signature (paid), which is out of scope.
 
 ### Known platform limitations (v0.1)
 

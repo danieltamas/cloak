@@ -221,7 +221,7 @@ Windows x86_64:     x86_64-pc-windows-msvc
 Extension:          .vsix (platform-independent)
 ```
 
-Release binaries are ad-hoc codesigned on macOS **with the `keychain-access-groups` entitlement** (`cli/cloak.entitlements`). The entitlement is required for the data-protection (Touch ID) keychain — without it `SecItemAdd` fails with `errSecMissingEntitlement` and cloak falls back to the password-gated legacy login keychain.
+Release binaries are plain ad-hoc codesigned on macOS (`codesign -s -`). A `keychain-access-groups` entitlement is deliberately **not** added: it is a restricted entitlement, and an ad-hoc binary that claims it is AMFI-killed at launch on end-user machines. As a result the data-protection (Touch ID) keychain is unavailable on distributed builds and cloak uses the legacy login keychain; the Touch ID prompt comes from the `cloak-touchid` auth gate, not from the keychain ACL.
 
 ## Test Suite
 

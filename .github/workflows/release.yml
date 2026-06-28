@@ -55,10 +55,13 @@ jobs:
           fi
           cp "$src" "${{ matrix.artifact }}"
       - if: runner.os == 'macOS'
-        # Ad-hoc sign WITH the keychain-access-groups entitlement. The entitlement
-        # is required for the data-protection (biometric / Touch ID) keychain;
-        # without it cloak falls back to the password-gated legacy login keychain.
-        run: codesign -s - --entitlements cli/cloak.entitlements --force "${{ matrix.artifact }}"
+        # Plain ad-hoc signing. Do NOT add a keychain-access-groups entitlement:
+        # it is a *restricted* entitlement, and an ad-hoc-signed binary that claims
+        # it is SIGKILL'd by AMFI at launch (Killed: 9) on end-user machines. The
+        # data-protection (Touch ID) keychain therefore can't be used without a real
+        # Apple Developer ID; cloak uses the legacy keychain + the cloak-touchid auth
+        # gate on macOS. See cli/src/keychain/mod.rs.
+        run: codesign -s - "${{ matrix.artifact }}"
       - uses: softprops/action-gh-release@v1
         with:
           files: ${{ matrix.artifact }}

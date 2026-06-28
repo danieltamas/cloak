@@ -66,9 +66,12 @@ fn get_key_macos(project_hash: &str) -> Result<[u8; 32]> {
     // 2. Try legacy keychain (keyring crate).
     let legacy_key = default::get_key(project_hash)?;
 
-    // 3. Migrate: store in biometric keychain.
-    if let Err(e) = macos::store_key(project_hash, &legacy_key) {
-        eprintln!("Warning: could not migrate key to biometric keychain: {}", e);
+    // 3. Best-effort migrate into the biometric keychain. On freely-distributed
+    //    (ad-hoc-signed) builds this always fails with errSecMissingEntitlement —
+    //    the data-protection keychain needs a restricted entitlement we can't ship
+    //    (it would get the binary AMFI-killed). That's expected; fall back silently
+    //    to the legacy keychain rather than spamming a warning on every read.
+    if macos::store_key(project_hash, &legacy_key).is_err() {
         return Ok(legacy_key);
     }
 
@@ -81,7 +84,6 @@ fn get_key_macos(project_hash: &str) -> Result<[u8; 32]> {
         }
         _ => {
             // Readback failed — keep legacy, remove potentially corrupt biometric entry.
-            eprintln!("Warning: biometric keychain verification failed, keeping legacy key");
             let _ = macos::delete_key(project_hash);
             Ok(legacy_key)
         }
