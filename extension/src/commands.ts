@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as keychain from './keychain';
+import * as auth from './auth';
 import * as filemanager from './filemanager';
 import * as vault from './vault';
 import * as recovery from './recovery';
@@ -151,6 +152,29 @@ async function cmdInit(helpers: CommandHelpers, presetRoot?: string): Promise<vo
             }
         } catch (err) {
             void vscode.window.showErrorMessage(`Cloak: Failed to protect ${f.relPath}. ${String(err)}`);
+        }
+    }
+
+    // 6b. Ensure the CLI auth gate exists. Without a `.auth` file, the `cloak`
+    //     CLI lets `run/peek/...` read secrets ungated (and macOS shows no Touch
+    //     ID prompt). Prompt once if this project has no gate yet.
+    if (protectedCount > 0 && !(await auth.authConfigured(projectRoot))) {
+        const password = await vscode.window.showInputBox({
+            password: true,
+            ignoreFocusOut: true,
+            title: 'Cloak: Set a CLI password',
+            prompt: 'Gates terminal access to your secrets (cloak run / peek / edit). On macOS Touch ID is used — this is the fallback. Leave empty to skip.',
+            placeHolder: 'CLI password (or leave empty to skip)',
+        });
+        if (password) {
+            try {
+                await auth.writeAuthFile(projectRoot, password);
+                void vscode.window.showInformationMessage('Cloak: CLI auth gate enabled — terminal access now requires Touch ID / password.');
+            } catch (err) {
+                void vscode.window.showErrorMessage(`Cloak: Failed to set CLI password. ${String(err)}`);
+            }
+        } else {
+            void vscode.window.showWarningMessage('Cloak: No CLI password set — terminal `cloak` commands won’t require auth. Run `cloak set-password` in this project later to enable it.');
         }
     }
 

@@ -182,6 +182,9 @@ enum Commands {
     Export,
     /// Remove Cloak protection
     Unprotect,
+    /// Set or change the CLI access password (Touch ID gate)
+    #[command(name = "set-password")]
+    SetPassword,
     /// Show protection status
     Status,
     /// Self-update Cloak to the latest version
@@ -226,6 +229,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         } => commands::reveal::run(key, duration, file),
         Commands::Export => commands::export::run(),
         Commands::Unprotect => commands::unprotect::run(),
+        Commands::SetPassword => commands::set_password::run(),
         Commands::Status => commands::status::run(),
         Commands::Update => commands::update::run(),
         Commands::KeychainGet { project_hash } => commands::keychain_get::run(project_hash),

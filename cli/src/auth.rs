@@ -345,10 +345,40 @@ fn hash_password(password: &str, salt: &[u8], iterations: u32) -> Vec<u8> {
     hash
 }
 
+/// Returns `true` if a CLI auth gate (`.auth` file) is configured for this project.
+pub fn auth_configured(project_root: &Path) -> bool {
+    auth_file_path(project_root)
+        .map(|p| p.exists())
+        .unwrap_or(false)
+}
+
 /// Returns the path to the auth file for the given project root.
 fn auth_file_path(project_root: &Path) -> Result<std::path::PathBuf> {
     let hash = vault::project_hash(project_root)
         .map_err(|e| anyhow::anyhow!("Failed to compute project hash: {}", e))?;
     let dir = platform::vaults_dir()?;
     Ok(dir.join(format!("{hash}.auth")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Cross-compat known vector: the `.auth` PBKDF2 hash must be byte-identical
+    /// to the extension (extension/src/auth.ts, same vector in its test). If this
+    /// changes, the CLI and extension auth gates diverge — never edit one side only.
+    #[test]
+    fn auth_pbkdf2_known_vector_matches_extension() {
+        let salt =
+            hex::decode("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+                .unwrap();
+        let hash = hash_password("cloak-cross-compat-pw", &salt, PBKDF2_ITERATIONS);
+        assert_eq!(
+            hex::encode(hash),
+            "4ba4cf0bf92ece95fd3026ef1bdf68577540f55854e8d0dda192fc50b71df1ee"
+        );
+        assert_eq!(PBKDF2_ITERATIONS, 100_000);
+        assert_eq!(HASH_LEN, 32);
+        assert_eq!(SALT_LEN, 32);
+    }
 }

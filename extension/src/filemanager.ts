@@ -71,6 +71,16 @@ export async function recoveryFilePath(projectRoot: string): Promise<string> {
     return path.join(dir, `${hash}.recovery`);
 }
 
+/**
+ * Returns the auth file path for the given project root.
+ * Format: <vaultsDir>/<projectHash>.auth — must match the CLI (auth.rs).
+ */
+export async function authFilePath(projectRoot: string): Promise<string> {
+    const hash = vault.projectHash(projectRoot);
+    const dir = await vaultsDir();
+    return path.join(dir, `${hash}.auth`);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Recursive .env discovery (mirrors the CLI's `scan_env_files`)
 // ─────────────────────────────────────────────────────────────────────────────

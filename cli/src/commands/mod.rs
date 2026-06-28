@@ -36,3 +36,6 @@ pub mod keychain_get;
 
 /// `cloak keychain-set` — store a vault key for extension integration.
 pub mod keychain_set;
+
+/// `cloak set-password` — set or rotate the CLI auth gate on an existing project.
+pub mod set_password;

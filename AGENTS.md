@@ -8,7 +8,7 @@ Cloak encrypts real `.env` credentials into an AES-256-GCM vault and leaves stru
 - **Extension** — TypeScript VS Code extension (`extension/`), zero runtime deps, same code works in Cursor / Windsurf / any VS Code fork
 - **Static site** — `index.html`, `llms.txt`, `SKILL.md`, `install.sh`, `install.ps1` served from `getcloak.dev`
 
-Current version: **0.4.3**. Early software — works end-to-end on macOS, tested on Linux, functional on Windows.
+Current version: **0.4.4**. Early software — works end-to-end on macOS, tested on Linux, functional on Windows.
 
 ---
 
@@ -108,6 +108,8 @@ Service name `cloak`, account `vault-<project_hash>`, key stored as 64-char hex.
 3. macOS with GUI session → spawn `cloak-touchid` Swift helper (`LAContext.evaluatePolicy(.deviceOwnerAuthentication)`). Touch ID first, macOS password fallback. Cancelled → deny. Unavailable (SSH, no Xcode CLT) → fall through.
 4. Prompt for CLI password via `rpassword` (hidden), hash with stored salt, compare.
 
+**The `.auth` gate is what makes Touch ID fire** (step 1 — no `.auth` means no prompt *and* no CLI gating). It is the `<hash>.auth` PBKDF2-SHA256 file (100k iters, 32-byte salt/hash; format identical CLI↔extension, cross-compat tested). Created by: `cloak init` (`setup_auth`), `cloak set-password` (existing projects, rotation requires current auth), and the **extension's `cmdInit`** (prompts once on fresh protect via `extension/src/auth.ts` `writeAuthFile`). Editor-protected projects from before this had no gate — that was the "Touch ID stopped working" regression.
+
 Extension flow: `onDidOpenTextDocument` decrypts buffer-side; `onWillSaveTextDocument` re-encrypts and writes sandbox; `onDidSaveTextDocument` restores real values in the buffer. Opening a "Cloak Terminal" with real env requires a modal dialog — AI agents cannot click it.
 
 ---
@@ -183,6 +185,7 @@ cloak edit        # $EDITOR on real values, re-encrypt on save (auth)
 cloak set K V     # add/update a secret (auth)
 cloak reveal K    # temporarily write real value on disk, auto-revert (auth)
 cloak unprotect   # restore original .env, delete vault (auth)
+cloak set-password # set/rotate the CLI auth gate (.auth) on an existing project; rotating requires current auth
 cloak recover     # restore keychain key from recovery key (no auth)
 cloak update      # self-update from GitHub releases (no auth)
 cloak keychain-get <hash>   # hidden subcommand used by the extension for Touch ID fallback
