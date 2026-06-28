@@ -194,6 +194,12 @@ enum Commands {
         /// The project hash to look up
         project_hash: String,
     },
+    /// Store a vault key into the keychain (internal, used by VS Code extension)
+    #[command(name = "keychain-set", hide = true)]
+    KeychainSet {
+        /// The project hash to store under
+        project_hash: String,
+    },
 }
 
 fn main() {
@@ -223,5 +229,6 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Status => commands::status::run(),
         Commands::Update => commands::update::run(),
         Commands::KeychainGet { project_hash } => commands::keychain_get::run(project_hash),
+        Commands::KeychainSet { project_hash } => commands::keychain_set::run(project_hash),
     }
 }

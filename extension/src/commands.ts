@@ -36,6 +36,7 @@ export function register(context: vscode.ExtensionContext, helpers: CommandHelpe
         vscode.commands.registerCommand('cloak.unprotect', () => cmdUnprotect(helpers)),
         vscode.commands.registerCommand('cloak.openCloakTerminal', () => cmdOpenCloakTerminal()),
         vscode.commands.registerCommand('cloak.recover', () => cmdRecover(helpers)),
+        vscode.commands.registerCommand('cloak.enableCliAccess', () => cmdEnableCliAccess()),
     );
 }
 
@@ -401,5 +402,55 @@ async function cmdRecover(helpers: CommandHelpers): Promise<void> {
     await helpers.refreshStatus();
 }
 
+/**
+ * cloak.enableCliAccess — seed the OS keychain with this project's key so the
+ * `cloak` CLI can decrypt a project that was protected from the editor.
+ *
+ * The extension stores keys in VS Code SecretStorage; the CLI reads the OS
+ * keychain. New protections seed both automatically (see keychain.storeKey), but
+ * projects protected before this existed only live in SecretStorage. This command
+ * pushes the in-editor key into the OS keychain so `cloak run/peek/edit` work.
+ */
+async function cmdEnableCliAccess(): Promise<void> {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders) {
+        void vscode.window.showErrorMessage('Cloak: No workspace folder open.');
+        return;
+    }
+
+    // Find a protected project.
+    let projectRoot: string | null = null;
+    for (const folder of folders) {
+        if (await filemanager.readMarker(folder.uri.fsPath)) {
+            projectRoot = folder.uri.fsPath;
+            break;
+        }
+    }
+    if (!projectRoot) {
+        void vscode.window.showErrorMessage('Cloak: No protected project found in this workspace.');
+        return;
+    }
+
+    const projectHash = vault.projectHash(projectRoot);
+    const key = await keychain.getKey(projectHash);
+    if (!key) {
+        void vscode.window.showErrorMessage(
+            'Cloak: Could not load this project’s key. Try "Cloak: Recover from Lost Keychain" first.',
+        );
+        return;
+    }
+
+    const ok = await keychain.seedCliKeychain(projectHash, key);
+    if (ok) {
+        void vscode.window.showInformationMessage(
+            'Cloak: CLI access enabled. You can now use `cloak run`, `cloak peek`, etc. in the terminal.',
+        );
+    } else {
+        void vscode.window.showErrorMessage(
+            'Cloak: Could not reach the `cloak` CLI. Install it and ensure it is on your PATH, then run this again.',
+        );
+    }
+}
+
 // Export individual command implementations for testing if needed
-export { cmdInit, cmdPeek, cmdUnprotect, cmdOpenCloakTerminal, cmdRecover };
+export { cmdInit, cmdPeek, cmdUnprotect, cmdOpenCloakTerminal, cmdRecover, cmdEnableCliAccess };
