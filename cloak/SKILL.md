@@ -113,6 +113,7 @@ The VS Code / Cursor extension is available as "Cloak" in the marketplace.
 | View sandbox vs real diff | `cloak peek` | Yes |
 | Temporarily reveal a key | `cloak reveal KEY --duration 30` | Yes |
 | Check protection status | `cloak status` | No |
+| Set/rotate Touch ID password gate | `cloak set-password` | Rotate only |
 | Restore lost keychain | `cloak recover` | No |
 | Remove protection | `cloak unprotect` | Yes |
 

@@ -84,6 +84,7 @@ Offset  Size    Content
 | `cloak reveal KEY --duration 30` | Temporarily show real value in .env, auto-revert |
 | `cloak unprotect` | Restore original .env files, delete vaults |
 | `cloak status` | Show protection state, per file |
+| `cloak set-password` | Set/rotate the Touch ID / CLI password gate on a project |
 | `cloak recover` | Restore keychain key from recovery key |
 | `cloak update` | Self-update from GitHub releases |
 

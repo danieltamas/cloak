@@ -1,7 +1,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/rust-2021-orange?style=flat-square&logo=rust" alt="Rust 2021" />
   <img src="https://img.shields.io/badge/typescript-5.4-blue?style=flat-square&logo=typescript" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/version-0.4.3-blue?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.4.4-blue?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/encryption-AES--256--GCM-blueviolet?style=flat-square" alt="AES-256-GCM" />
@@ -16,7 +16,7 @@
 
 ---
 
-> **Early Software Notice:** Cloak is in active development (v0.4.3). It works end-to-end on macOS and has been tested on Linux. Windows support is functional but less tested. Start with a non-critical project to verify it works for your setup before protecting production secrets. Please [report bugs](https://github.com/danieltamas/cloak/issues) — your feedback helps make Cloak rock-solid across all platforms.
+> **Early Software Notice:** Cloak is in active development (v0.4.4). It works end-to-end on macOS and has been tested on Linux. Windows support is functional but less tested. Start with a non-critical project to verify it works for your setup before protecting production secrets. Please [report bugs](https://github.com/danieltamas/cloak/issues) — your feedback helps make Cloak rock-solid across all platforms.
 
 ---
 
@@ -226,9 +226,12 @@ cloak set KEY VALUE [--file <p>]  # Add or update a secret (auth required)
 cloak reveal KEY --duration 30    # Temporarily show real value on disk, auto-revert (auth required)
 cloak unprotect                   # Restore original .env files, delete vaults (auth required)
 cloak status                      # Show protection state, per file (no auth)
+cloak set-password                # Set/rotate the Touch ID / CLI password gate (auth to rotate)
 cloak recover                     # Restore keychain key from recovery key (no auth)
 cloak update                      # Self-update from GitHub releases (no auth)
 ```
+
+> **Touch ID not prompting?** The fingerprint gate exists only when a project has a `.auth` file. `cloak init` and recent versions of the VS Code extension create it; older or editor-protected projects may not have it. Run **`cloak set-password`** in the project to add it.
 
 ### Multiple `.env` files
 

@@ -386,3 +386,20 @@ describe('Cross-compatibility — Test 8: vaultId per-file vault scheme', () => 
         expect(local).not.toBe(nested);
     });
 });
+
+describe('auth file (.auth) PBKDF2 — CLI/extension parity', () => {
+    // Same known vector as cli/src/auth.rs test `auth_pbkdf2_known_vector_matches_extension`.
+    // The auth gate must hash identically in both implementations.
+    const PBKDF2_ITERATIONS = 100_000;
+    const salt = Buffer.from(
+        '0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20',
+        'hex',
+    );
+
+    it('matches the Rust known vector', () => {
+        const hash = crypto.pbkdf2Sync('cloak-cross-compat-pw', salt, PBKDF2_ITERATIONS, 32, 'sha256');
+        expect(hash.toString('hex')).toBe(
+            '4ba4cf0bf92ece95fd3026ef1bdf68577540f55854e8d0dda192fc50b71df1ee',
+        );
+    });
+});
