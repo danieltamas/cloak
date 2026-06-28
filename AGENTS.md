@@ -8,7 +8,7 @@ Cloak encrypts real `.env` credentials into an AES-256-GCM vault and leaves stru
 - **Extension** — TypeScript VS Code extension (`extension/`), zero runtime deps, same code works in Cursor / Windsurf / any VS Code fork
 - **Static site** — `index.html`, `llms.txt`, `SKILL.md`, `install.sh`, `install.ps1` served from `getcloak.dev`
 
-Current version: **0.4.0**. Early software — works end-to-end on macOS, tested on Linux, functional on Windows.
+Current version: **0.4.1**. Early software — works end-to-end on macOS, tested on Linux, functional on Windows.
 
 ---
 
@@ -97,6 +97,8 @@ Recovery key shown **once** during `init`: `CLOAK-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`
 
 Service name `cloak`, account `vault-<project_hash>`, key stored as 64-char hex.
 
+**The OS keychain is the single canonical key store; both implementations must write it.** The extension keeps a SecretStorage copy as a fast (no-prompt) cache, but on every `storeKey` it also seeds the OS keychain via `cloak keychain-set` (best-effort) so terminal commands can decrypt a project protected from the editor. Reads are symmetric: the extension's `getKey` falls back to `cloak keychain-get` when SecretStorage misses. Without the write bridge, editor-protected projects were invisible to the CLI (`cloak run/peek` → "key not found"); the "Cloak: Enable CLI Access" command retro-seeds older such projects. The recovery file is the cross-platform backstop (`cloak recover`).
+
 ### Authentication flow
 
 `peek / run / edit / reveal / set / unprotect` require auth. `init / status / recover / update` do not.
@@ -184,9 +186,10 @@ cloak unprotect   # restore original .env, delete vault (auth)
 cloak recover     # restore keychain key from recovery key (no auth)
 cloak update      # self-update from GitHub releases (no auth)
 cloak keychain-get <hash>   # hidden subcommand used by the extension for Touch ID fallback
+cloak keychain-set <hash>   # hidden subcommand; reads a 64-hex key from stdin, seeds the OS keychain (extension → CLI bridge)
 ```
 
-The hidden `keychain-get` subcommand is the bridge that lets the extension trigger the Touch ID prompt via the CLI binary. Do not surface it in help text or user docs.
+The hidden `keychain-get` / `keychain-set` subcommands are the bridge between the extension and the CLI's OS keychain: `keychain-get` lets the extension trigger the Touch ID prompt via the CLI binary, and `keychain-set` lets the extension seed the OS keychain so the CLI can decrypt editor-protected projects. Both are hidden — do not surface them in help text or user docs.
 
 ---
 

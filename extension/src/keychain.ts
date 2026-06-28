@@ -9,6 +9,30 @@ export function init(storage: vscode.SecretStorage): void {
 
 export async function storeKey(projectHash: string, key: Buffer): Promise<void> {
     await secretStorage.store(`cloak-vault-${projectHash}`, key.toString('hex'));
+    // Best-effort: also seed the OS keychain via the `cloak` CLI so terminal
+    // commands (cloak run/peek/edit) can decrypt a project protected from the editor.
+    // Without this, the CLI has no key for editor-protected projects. Failure is
+    // non-fatal — the recovery key remains the backstop and "Cloak: Enable CLI
+    // Access" can retry once the CLI is installed.
+    await seedCliKeychain(projectHash, key);
+}
+
+/**
+ * Push a key into the OS keychain via `cloak keychain-set` so the CLI can use it.
+ * The key is piped over stdin (never argv, so it can't leak via the process list).
+ * Resolves true on success, false if the CLI is missing or the write failed.
+ */
+export function seedCliKeychain(projectHash: string, key: Buffer): Promise<boolean> {
+    return new Promise((resolve) => {
+        try {
+            const child = execFile('cloak', ['keychain-set', projectHash], { timeout: 30000 }, (err) => {
+                resolve(!err);
+            });
+            child.stdin?.end(key.toString('hex'));
+        } catch {
+            resolve(false);
+        }
+    });
 }
 
 export async function getKey(projectHash: string): Promise<Buffer | null> {

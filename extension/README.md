@@ -2,7 +2,7 @@
 
 AI agents see sandbox credentials. You see the real ones. Your app runs with real credentials.
 
-> **Early Software Notice:** Cloak is in active development (v0.4.0). Start with a non-critical project to verify it works for your setup. Please [report bugs](https://github.com/danieltamas/cloak/issues) — your feedback helps make Cloak rock-solid.
+> **Early Software Notice:** Cloak is in active development (v0.4.1). Start with a non-critical project to verify it works for your setup. Please [report bugs](https://github.com/danieltamas/cloak/issues) — your feedback helps make Cloak rock-solid.
 
 ## The Problem
 
@@ -47,6 +47,7 @@ NODE_ENV=production                      NODE_ENV=production  (unchanged)
 | **Cloak: Open Terminal with Real Env** | Terminal with real env vars (confirmation required) |
 | **Cloak: Remove Protection** | Restore real values to disk, delete vault |
 | **Cloak: Recover from Lost Keychain** | Restore access using your recovery key |
+| **Cloak: Enable CLI Access** | Seed the OS keychain so the `cloak` CLI (`cloak run`, `cloak peek`, …) can decrypt a project you protected from the editor |
 
 ## Status Bar
 
