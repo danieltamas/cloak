@@ -165,9 +165,28 @@ The password is hashed with PBKDF2-SHA256 (100k iterations) and stored in `~/.co
 
 ### Touch ID on macOS
 
-On macOS with Touch ID hardware, Cloak compiles a small Swift helper binary on first use (~4 seconds, cached at `/tmp/cloak-touchid`). Subsequent auth is instant — just touch the sensor.
+There are **two** distinct biometric layers on macOS. Know which is which:
 
-If Touch ID is unavailable (SSH session, old Mac, no Xcode CLT), Cloak falls back to the CLI password.
+**1. Touch ID to authenticate (works out of the box).**
+When you run an auth-gated command (`cloak run / peek / edit / set / reveal / unprotect`), Cloak prompts for Touch ID via macOS LocalAuthentication. It compiles a small Swift helper on first use (~4 s, cached at `/tmp/cloak-touchid`), so it needs **Xcode Command Line Tools** (`xcode-select --install`) for the `swift` compiler. With Touch ID hardware you just touch the sensor; otherwise it falls back to your macOS account password, then to a CLI password (SSH / old Mac / no CLT).
+
+**2. Storing the key *inside* the Touch ID (data-protection) keychain — needs a paid Apple Developer ID.**
+Sealing the vault key behind a biometric keychain ACL requires the `keychain-access-groups` entitlement. macOS only honors that entitlement on binaries signed with a real **Apple Developer ID**. An ad-hoc or self-signed binary that claims it is **killed at launch by AMFI** (`Killed: 9`) — this is a macOS code-signing policy, not a Cloak limitation. So the distributed Cloak build deliberately ships **without** the entitlement and uses the standard login keychain (still encrypted, still login-gated; layer #1 above provides the Touch ID).
+
+If you have an Apple Developer ID and want the biometric keychain, build from source and sign with it:
+
+```bash
+cd cli
+cargo build --release
+codesign -s "Developer ID Application: Your Name (TEAMID)" \
+  --entitlements cloak.entitlements --options runtime --force \
+  target/release/cloak
+cp target/release/cloak "$(which cloak)"
+```
+
+`cli/cloak.entitlements` is included for exactly this. **Do not** sign an ad-hoc (`codesign -s -`) build with it — the result won't run.
+
+**Getting repeated keychain password prompts?** macOS prompts when the `cloak` binary's signature changes (a rebuild or update gives it a new identity) and it no longer matches an existing keychain item's access list. Click **"Always Allow"** on the dialog once to re-grant access permanently.
 
 ## How It Works
 

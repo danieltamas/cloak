@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      OPT-IN entitlement for the macOS data-protection (Touch ID) keychain.
+
+      ⚠️  USE ONLY when signing with a real Apple Developer ID:
+            codesign -s "Developer ID Application: …" \
+              --entitlements cli/cloak.entitlements --options runtime --force <binary>
+
+      ⚠️  NEVER sign an ad-hoc (`codesign -s -`) or self-signed build with this.
+          `keychain-access-groups` is a RESTRICTED entitlement; macOS AMFI
+          SIGKILLs an unauthorized binary that claims it (`Killed: 9`). This is
+          why the distributed release uses plain `codesign -s -` and this file is
+          NOT referenced by .github/workflows/release.yml.
+
+      Without this entitlement (the default), cloak stores keys in the legacy
+      login keychain and Touch ID still works via the LocalAuthentication auth
+      gate (see cli/src/auth.rs). See README → "Touch ID on macOS".
+    -->
+    <key>keychain-access-groups</key>
+    <array>
+        <string>cloak</string>
+    </array>
+</dict>
+</plist>
