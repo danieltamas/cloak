@@ -7,7 +7,9 @@
 //!
 //! ## Graceful degradation
 //!
-//! - **No TTY** (CI, piped input): auth is skipped with a warning.
+//! - **macOS GUI session, no TTY** (run.dev, IDE task runners with piped stdin):
+//!   Touch ID still fires — it's a GUI modal, not a terminal prompt.
+//! - **No TTY and no Touch ID** (CI, headless piped input): auth is rejected.
 //!   Secrets in CI should come from the CI provider's secret store, not Cloak.
 //! - **macOS Touch ID unavailable** (SSH, old hardware): falls back to password.
 //! - **No auth file** (pre-auth projects): auth is not required (backwards compat).
@@ -100,14 +102,19 @@ pub fn setup_auth(project_root: &Path) -> Result<()> {
 /// If no auth file exists (backwards-compatible with pre-auth projects),
 /// returns `Ok(())` immediately.
 ///
-/// On macOS, first tries Touch ID via `bioutil` / `LocalAuthentication`.
-/// Falls back to password prompt on all platforms.
+/// On macOS with a GUI session, tries Touch ID first — the biometric prompt is
+/// a GUI modal (LocalAuthentication), not a terminal read, so it works even when
+/// stdin is piped. GUI supervisors (run.dev, IDE task runners) spawn children
+/// with piped stdin/stdout, so this path must be attempted *before* the
+/// non-interactive bail below, or those tools can never authenticate.
 ///
-/// In non-interactive sessions (no TTY), auth is skipped with a warning.
+/// The password fallback still requires an interactive terminal; a
+/// non-interactive session with no Touch ID available is rejected.
 ///
 /// # Errors
 ///
-/// Returns an error if authentication fails (wrong password).
+/// Returns an error if authentication fails (wrong password, cancelled biometric,
+/// or no way to prompt).
 pub fn require_auth(project_root: &Path) -> Result<()> {
     let auth_path = auth_file_path(project_root)?;
 
@@ -116,20 +123,80 @@ pub fn require_auth(project_root: &Path) -> Result<()> {
         return Ok(());
     }
 
-    // Non-interactive session — no way to prompt.
-    if !is_interactive() {
-        eprintln!(
-            "Warning: Non-interactive session — cannot authenticate. \
-             Secrets access requires an interactive terminal."
-        );
-        anyhow::bail!(
-            "Authentication required but no interactive terminal available. \
-             Run this command in an interactive terminal."
-        );
+    for method in auth_methods(gui_session_available(), is_interactive()) {
+        match method {
+            // Biometric is tried first whenever a GUI session exists — see
+            // `auth_methods`. On Unavailable we fall through to the next method.
+            AuthMethod::Biometric =>
+            {
+                #[cfg(target_os = "macos")]
+                match try_touch_id() {
+                    TouchIdResult::Success => return Ok(()),
+                    TouchIdResult::Cancelled => anyhow::bail!("Authentication cancelled"),
+                    TouchIdResult::Unavailable => {}
+                }
+            }
+            AuthMethod::Password => return verify_password(&auth_path),
+        }
     }
 
-    // Read and parse auth file.
-    let content = std::fs::read_to_string(&auth_path)
+    // No usable method: either no GUI + no TTY, or the only option was biometric
+    // and its hardware/helper was unavailable with no interactive fallback.
+    eprintln!(
+        "Warning: Non-interactive session — cannot authenticate. \
+         Secrets access requires an interactive terminal."
+    );
+    anyhow::bail!(
+        "Authentication required but no interactive terminal available. \
+         Run this command in an interactive terminal."
+    );
+}
+
+/// An authentication method to attempt, in priority order.
+#[derive(Debug, PartialEq, Eq)]
+enum AuthMethod {
+    /// macOS Touch ID / system-password GUI modal (LocalAuthentication).
+    Biometric,
+    /// Hidden password prompt on an interactive terminal.
+    Password,
+}
+
+/// Decides which auth methods to attempt, in order, for the current session.
+///
+/// Biometric is planned FIRST whenever a GUI session is available, **regardless
+/// of whether stdin is a TTY**. This is the fix for the run.dev / IDE-task-runner
+/// case: those supervisors pipe stdin, so `is_interactive()` is false even though
+/// the user is physically at their Mac — but Touch ID is a GUI modal that needs no
+/// TTY. Gating biometric behind interactivity is what made it silently unreachable.
+///
+/// The password fallback requires an interactive terminal. An empty result means
+/// there is no way to authenticate and the caller must reject.
+fn auth_methods(gui_session: bool, interactive: bool) -> Vec<AuthMethod> {
+    let mut methods = Vec::new();
+    if gui_session {
+        methods.push(AuthMethod::Biometric);
+    }
+    if interactive {
+        methods.push(AuthMethod::Password);
+    }
+    methods
+}
+
+/// Whether a biometric-capable GUI session is available on this platform.
+fn gui_session_available() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        has_gui_session()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// Verifies the stored password against an interactive prompt.
+fn verify_password(auth_path: &Path) -> Result<()> {
+    let content = std::fs::read_to_string(auth_path)
         .with_context(|| format!("Failed to read auth file {}", auth_path.display()))?;
     let auth: AuthFile =
         serde_json::from_str(&content).context("Failed to parse auth file as JSON")?;
@@ -139,23 +206,6 @@ pub fn require_auth(project_root: &Path) -> Result<()> {
     let stored_hash =
         hex::decode(&auth.hash).context("Failed to decode hash hex from auth file")?;
 
-    // On macOS, try Touch ID first (only if GUI session is available).
-    #[cfg(target_os = "macos")]
-    {
-        if has_gui_session() {
-            match try_touch_id() {
-                TouchIdResult::Success => return Ok(()),
-                TouchIdResult::Cancelled => {
-                    anyhow::bail!("Authentication cancelled");
-                }
-                TouchIdResult::Unavailable => {
-                    // Fall through to password prompt.
-                }
-            }
-        }
-    }
-
-    // Password fallback (all platforms).
     let password = rpassword::prompt_password("Password: ")
         .context("Failed to read password from terminal")?;
 
@@ -369,9 +419,8 @@ mod tests {
     /// changes, the CLI and extension auth gates diverge — never edit one side only.
     #[test]
     fn auth_pbkdf2_known_vector_matches_extension() {
-        let salt =
-            hex::decode("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
-                .unwrap();
+        let salt = hex::decode("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+            .unwrap();
         let hash = hash_password("cloak-cross-compat-pw", &salt, PBKDF2_ITERATIONS);
         assert_eq!(
             hex::encode(hash),
@@ -380,5 +429,37 @@ mod tests {
         assert_eq!(PBKDF2_ITERATIONS, 100_000);
         assert_eq!(HASH_LEN, 32);
         assert_eq!(SALT_LEN, 32);
+    }
+
+    /// Regression: under run.dev (and any GUI task runner) stdin is piped, so
+    /// `is_interactive()` is false — but the user is at their Mac and Touch ID
+    /// must still fire. Biometric therefore has to be planned even without a TTY.
+    /// Before the fix, the non-interactive check bailed before Touch ID was ever
+    /// attempted. See `auth_methods`.
+    #[test]
+    fn gui_session_without_tty_still_plans_biometric() {
+        assert_eq!(auth_methods(true, false), vec![AuthMethod::Biometric]);
+    }
+
+    /// Interactive GUI session (normal terminal on a Mac): Touch ID first, then
+    /// the password prompt as a fallback.
+    #[test]
+    fn interactive_gui_session_tries_biometric_then_password() {
+        assert_eq!(
+            auth_methods(true, true),
+            vec![AuthMethod::Biometric, AuthMethod::Password]
+        );
+    }
+
+    /// No GUI (headless SSH, Linux/Windows) but an interactive TTY: password only.
+    #[test]
+    fn headless_interactive_session_uses_password_only() {
+        assert_eq!(auth_methods(false, true), vec![AuthMethod::Password]);
+    }
+
+    /// No GUI and no TTY (CI, headless piped input): nothing to try — reject.
+    #[test]
+    fn headless_non_interactive_session_has_no_methods() {
+        assert!(auth_methods(false, false).is_empty());
     }
 }
